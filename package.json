@@ -1,0 +1,17 @@
+{
+  "name": "markdown-blog-editor",
+  "version": "0.1.0",
+  "description": "A simple macOS Markdown editor for blog posts with ImageMagick-powered image handling and tag insertion.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "marked": "^12.0.0"
+  },
+  "devDependencies": {
+    "electron": "^43.2.0"
+  }
+}

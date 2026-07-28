@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Markdown Blog Editor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="toolbar">
+    <span id="filename">Untitled.md</span>
+    <div id="toolbar-right">
+      <button id="toggle-preview">Hide Preview</button>
+      <span id="status"></span>
+    </div>
+  </div>
+  <div id="panes">
+    <textarea id="editor" spellcheck="false" placeholder="Start writing your post… drag an image in, or paste one, to insert it."></textarea>
+    <div id="preview"></div>
+  </div>
+  <div id="drop-hint">Drop an image anywhere to convert &amp; insert it</div>
+  <script src="renderer.js"></script>
+</body>
+</html>
