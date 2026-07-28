@@ -9,12 +9,18 @@ let currentFilePath = null;
 let previewVisible = true;
 let renderDebounce = null;
 
+function withoutHugoFrontMatter(text) {
+  const source = text || '';
+  const match = source.match(/^(---|\+\+\+)\s*\r?\n[\s\S]*?\r?\n\1\s*(?:\r?\n|$)/);
+  return match ? source.slice(match[0].length) : source;
+}
+
 function renderPreview() {
   try {
-    // Keep Markdown parsing in the preload bridge. The renderer stays isolated
-    // from Node, while a parser failure is surfaced in the preview instead of
-    // looking like a blank, broken split pane.
-    preview.innerHTML = window.api.renderMarkdown(editor.value);
+    if (!window.marked) throw new Error('Markdown parser failed to load');
+    // Hugo removes front matter before rendering a page. Do the same for the
+    // editor preview, then render with Marked's browser bundle.
+    preview.innerHTML = window.marked.parse(withoutHugoFrontMatter(editor.value), { breaks: true });
   } catch (error) {
     console.error('Unable to render Markdown preview:', error);
     preview.textContent = `Preview error: ${error.message}`;
@@ -69,6 +75,10 @@ function insertAtCursor(text) {
 }
 
 async function handleImageFile(filePath) {
+  if (!window.api) {
+    setStatus('Image processing is unavailable because the Electron API did not load', true);
+    return;
+  }
   const alt = window.prompt('Alt text for this image (used in the tag):', '');
   setStatus('Converting image…');
   const result = await window.api.processImage({ sourcePath: filePath, alt: alt || '' });
@@ -109,14 +119,26 @@ editor.addEventListener('paste', (e) => {
 });
 
 // --- File open/save wiring ---
-window.api.onFileOpened(({ filePath, content }) => {
-  currentFilePath = filePath;
-  editor.value = content;
-  filenameEl.textContent = filePath ? filePath.split('/').pop() : 'Untitled.md';
-  renderPreview();
-});
+if (window.api) {
+  window.api.onFileOpened(({ filePath, content }) => {
+    currentFilePath = filePath;
+    editor.value = content;
+    filenameEl.textContent = filePath ? filePath.split('/').pop() : 'Untitled.md';
+    renderPreview();
+  });
+
+  window.api.onRequestSave(() => saveCurrent(false));
+  window.api.onRequestSaveAs(() => saveCurrent(true));
+} else {
+  console.error('Electron preload API was not loaded');
+  setStatus('File actions unavailable: Electron preload API did not load', true);
+}
 
 async function saveCurrent(forcePicker) {
+  if (!window.api) {
+    setStatus('Saving is unavailable because the Electron API did not load', true);
+    return;
+  }
   const result = await window.api.saveFile({
     content: editor.value,
     filePath: forcePicker ? null : currentFilePath
@@ -127,9 +149,6 @@ async function saveCurrent(forcePicker) {
     setStatus('Saved');
   }
 }
-
-window.api.onRequestSave(() => saveCurrent(false));
-window.api.onRequestSaveAs(() => saveCurrent(true));
 
 // Render once after the DOM and preload bridge are both ready. Without this,
 // the preview remains stale until an input or file-open event happens.

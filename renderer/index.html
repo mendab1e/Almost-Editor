@@ -18,6 +18,9 @@
     <div id="preview"></div>
   </div>
   <div id="drop-hint">Drop an image anywhere to convert &amp; insert it</div>
+  <!-- Preview parsing runs in the page context so a missing optional parser
+       module cannot prevent Electron's preload API from loading. -->
+  <script src="../node_modules/marked/lib/marked.umd.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
