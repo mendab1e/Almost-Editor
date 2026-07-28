@@ -19,6 +19,7 @@ const DEFAULT_CONFIG = {
   outputFormat: 'webp', // e.g. webp, jpg, png
   quality: 82,
   theme: 'system',
+  fontSize: 15,
   lastOpenedDirectory: null,
   lastHugoProject: null
 };

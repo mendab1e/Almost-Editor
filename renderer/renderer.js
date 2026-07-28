@@ -7,6 +7,7 @@ const toggleBtn = document.getElementById('toggle-preview');
 const filenameEl = document.getElementById('filename');
 const statusEl = document.getElementById('status');
 const themeSelect = document.getElementById('theme-select');
+const fontSizeSelect = document.getElementById('font-size-select');
 const openProjectBtn = document.getElementById('open-project');
 const newPostBtn = document.getElementById('new-post');
 const projectNameEl = document.getElementById('project-name');
@@ -27,8 +28,9 @@ const closeLightboxBtn = document.getElementById('close-lightbox');
 let currentFilePath = null;
 let previewVisible = true;
 let renderDebounce = null;
-let savedConfig = { theme: 'system' };
+let savedConfig = { theme: 'system', fontSize: 15 };
 let hugoProjectPath = null;
+let currentProjectPostName = null;
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
 const editor = createMarkdownEditor(editorHost, handleEditorChange);
 
@@ -50,6 +52,9 @@ async function initializeTheme() {
     }
   }
   themeSelect.value = savedConfig.theme || 'system';
+  const fontSize = Number(savedConfig.fontSize) || 15;
+  fontSizeSelect.value = String(fontSize);
+  editor.setFontSize(fontSize);
   applyTheme(themeSelect.value);
 }
 
@@ -62,6 +67,20 @@ themeSelect.addEventListener('change', async () => {
     } catch (error) {
       setStatus('Theme preference could not be saved', true);
       console.error('Unable to save theme preference:', error);
+    }
+  }
+});
+
+fontSizeSelect.addEventListener('change', async () => {
+  const fontSize = Number(fontSizeSelect.value);
+  savedConfig = { ...savedConfig, fontSize };
+  editor.setFontSize(fontSize);
+  if (window.api) {
+    try {
+      savedConfig = await window.api.saveConfig(savedConfig);
+    } catch (error) {
+      setStatus('Text size preference could not be saved', true);
+      console.error('Unable to save text size preference:', error);
     }
   }
 });
@@ -87,7 +106,7 @@ function titleFromFrontMatter(text) {
 }
 
 function updateHeader() {
-  const filename = currentFilePath ? currentFilePath.split('/').pop() : 'Untitled.md';
+  const filename = currentProjectPostName || (currentFilePath ? currentFilePath.split('/').pop() : 'Untitled.md');
   const title = titleFromFrontMatter(editor.getValue());
   filenameEl.textContent = title ? `${filename} · ${title}` : filename;
 }
@@ -387,8 +406,10 @@ if (window.api) {
     currentFilePath = filePath;
     if (projectPath) {
       hugoProjectPath = projectPath;
+      currentProjectPostName = filePath ? filePath.split('/').at(-2) : null;
       workspaceEl.classList.remove('project-closed');
     } else {
+      currentProjectPostName = null;
       closeProjectSidebar();
     }
     editor.setValue(content);

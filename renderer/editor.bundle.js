@@ -25133,8 +25133,6 @@ var lightHighlighting = syntaxHighlighting(HighlightStyle.define([
 var lightTheme = [
   EditorView.theme({
     "&": { height: "100%", color: "#1f2937", backgroundColor: "#ffffff" },
-    ".cm-scroller": { fontFamily: '"SF Mono", Menlo, monospace', fontSize: "15px", lineHeight: "1.6" },
-    ".cm-content": { padding: "24px 6%" },
     // CodeMirror positions gutter entries relative to the document. Adding
     // matching content padding here shifts every line number down one line.
     ".cm-gutters": { border: "none", color: "#98a2b3", backgroundColor: "#ffffff" },
@@ -25144,6 +25142,20 @@ var lightTheme = [
   }),
   lightHighlighting
 ];
+function editorTypography(fontSize) {
+  return EditorView.theme({
+    "&": { height: "100%" },
+    ".cm-scroller": {
+      fontFamily: '"SF Mono", Menlo, monospace',
+      fontSize: `${fontSize}px`,
+      lineHeight: "1.6",
+      fontWeight: "400",
+      letterSpacing: "normal"
+    },
+    ".cm-content": { padding: "24px 6%" },
+    ".cm-gutters": { paddingTop: "0" }
+  });
+}
 function shortcodeDecorations(view) {
   const ranges = [];
   const shortcodes = /\{\{<[\s\S]*?>\}\}/g;
@@ -25170,6 +25182,7 @@ var shortcodeTheme = EditorView.baseTheme({
 });
 function createMarkdownEditor(parent, onChange) {
   const theme2 = new Compartment();
+  const fontSize = new Compartment();
   let ignoreChange = false;
   const view = new EditorView({
     state: EditorState.create({
@@ -25185,7 +25198,8 @@ function createMarkdownEditor(parent, onChange) {
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !ignoreChange) onChange(update.state.doc.toString());
         }),
-        theme2.of(lightTheme)
+        theme2.of(lightTheme),
+        fontSize.of(editorTypography(15))
       ]
     }),
     parent
@@ -25204,7 +25218,10 @@ function createMarkdownEditor(parent, onChange) {
     getValue,
     setValue,
     focus: () => view.focus(),
-    setTheme: (mode) => view.dispatch({ effects: theme2.reconfigure(mode === "dark" ? oneDark : lightTheme) }),
+    setTheme: (mode) => view.dispatch({
+      effects: theme2.reconfigure(mode === "dark" ? oneDark : lightTheme)
+    }),
+    setFontSize: (size) => view.dispatch({ effects: fontSize.reconfigure(editorTypography(size)) }),
     insertAtCursor(text) {
       const range = view.state.selection.main;
       view.dispatch({
