@@ -6,6 +6,7 @@ const panes = document.getElementById('panes');
 const toggleBtn = document.getElementById('toggle-preview');
 const filenameEl = document.getElementById('filename');
 const statusEl = document.getElementById('status');
+const dirtyStatusEl = document.getElementById('dirty-status');
 const themeSelect = document.getElementById('theme-select');
 const fontSizeSelect = document.getElementById('font-size-select');
 const imageOptionsBtn = document.getElementById('image-options');
@@ -36,11 +37,15 @@ const lightboxImage = document.getElementById('lightbox-image');
 const closeLightboxBtn = document.getElementById('close-lightbox');
 
 let currentFilePath = null;
+let currentDocumentKey = '__untitled__';
 let previewVisible = true;
 let renderDebounce = null;
 let savedConfig = { theme: 'system', fontSize: 15 };
 let hugoProjectPath = null;
 let currentProjectPostName = null;
+const openDocuments = new Map([
+  ['__untitled__', { savedContent: '', content: '', dirty: false }]
+]);
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
 const editor = createMarkdownEditor(editorHost, handleEditorChange);
 
@@ -126,8 +131,45 @@ function updateHeader() {
 }
 
 function handleEditorChange() {
+  const document = openDocuments.get(currentDocumentKey);
+  if (document) {
+    document.content = editor.getValue();
+    document.dirty = document.content !== document.savedContent;
+    updateDirtyStatus();
+  }
   updateHeader();
   scheduleRender();
+}
+
+function documentKey(filePath) {
+  return filePath || '__untitled__';
+}
+
+function updateDirtyStatus() {
+  const document = openDocuments.get(currentDocumentKey);
+  dirtyStatusEl.classList.toggle('hidden', !document?.dirty);
+  updatePostDirtyIndicators();
+}
+
+function updatePostDirtyIndicators() {
+  postListEl.querySelectorAll('.post-entry').forEach((button) => {
+    const document = openDocuments.get(documentKey(button.dataset.filePath));
+    button.querySelector('.post-entry-dirty')?.classList.toggle('hidden', !document?.dirty);
+  });
+}
+
+function openDocument(filePath, diskContent) {
+  const key = documentKey(filePath);
+  let document = openDocuments.get(key);
+  // A dirty buffer is the user's in-memory draft. Prefer it over a fresh read
+  // from disk when returning to a sidebar post; clean documents can refresh.
+  if (!document || !document.dirty) {
+    document = { savedContent: diskContent, content: diskContent, dirty: false };
+    openDocuments.set(key, document);
+  }
+  currentDocumentKey = key;
+  editor.setValue(document.content);
+  updateDirtyStatus();
 }
 
 function setupHorizontalResizer(handle, getStartWidth, resize) {
@@ -189,10 +231,19 @@ function renderPostList(posts) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'post-entry';
-    button.textContent = post.name;
     button.dataset.postPath = post.relativePath;
+    button.dataset.filePath = `${hugoProjectPath}/content/posts/${post.relativePath}/index.md`;
+    const label = document.createElement('span');
+    label.className = 'post-entry-label';
+    label.textContent = post.name;
+    const dirty = document.createElement('span');
+    dirty.className = 'post-entry-dirty hidden';
+    dirty.textContent = '●';
+    dirty.setAttribute('aria-label', 'Unsaved changes');
+    button.append(label, dirty);
     postListEl.append(button);
   }
+  updatePostDirtyIndicators();
 }
 
 function highlightCurrentPost() {
@@ -513,7 +564,7 @@ if (window.api) {
       currentProjectPostName = null;
       closeProjectSidebar();
     }
-    editor.setValue(content);
+    openDocument(filePath, content);
     updateHeader();
     highlightCurrentPost();
     renderPreview();
@@ -541,12 +592,18 @@ async function saveCurrent(forcePicker) {
     setStatus('Saving is unavailable because the Electron API did not load', true);
     return;
   }
+  const content = editor.getValue();
+  const previousKey = currentDocumentKey;
   const result = await window.api.saveFile({
-    content: editor.getValue(),
+    content,
     filePath: forcePicker ? null : currentFilePath
   });
   if (result.ok) {
     currentFilePath = result.filePath;
+    currentDocumentKey = documentKey(currentFilePath);
+    if (previousKey !== currentDocumentKey) openDocuments.delete(previousKey);
+    openDocuments.set(currentDocumentKey, { savedContent: content, content, dirty: false });
+    updateDirtyStatus();
     updateHeader();
     setStatus('Saved');
     renderPreview(); // Resolve shortcode image paths once this post has a folder.

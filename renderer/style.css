@@ -98,7 +98,9 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 #project-name { padding: 0 10px 9px; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #post-list { padding: 0 5px 8px; }
 .post-entry {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   width: 100%;
   border: 0;
   border-radius: 4px;
@@ -112,6 +114,9 @@ body.is-resizing { cursor: col-resize; user-select: none; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.post-entry-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.post-entry-dirty { margin-left: auto; color: #f79009; font-size: 14px; line-height: 1; }
+.post-entry-dirty.hidden { display: none; }
 .post-entry:hover, .post-entry.active { background: var(--control-hover); }
 }
 #editor {
@@ -187,3 +192,13 @@ body.is-resizing { cursor: col-resize; user-select: none; }
   pointer-events: none;
 }
 #status:empty { display: none; }
+#dirty-status {
+  position: fixed;
+  z-index: 12;
+  right: 16px;
+  bottom: 12px;
+  color: #f79009;
+  font-size: 16px;
+  line-height: 1;
+}
+#dirty-status.hidden { display: none; }
