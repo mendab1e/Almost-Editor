@@ -1,82 +1,105 @@
-# Markdown Blog Editor
+# Almost Editor
 
-A minimal macOS Electron app for writing Markdown blog posts. Drag or paste an
-image into the editor and it's automatically resized/converted with
-ImageMagick and inserted as a Markdown tag at your cursor.
+Almost Editor is a desktop Markdown editor tailored to [Hugo](https://gohugo.io) blogs that use page bundles and a Lightbox for rendering images.
+I built it to write posts for my blog, https://blog.almostinfocus.com.
+While Markdown files can be edited anywhere, manually converting images and inserting shortcodes was always cumbersome.
 
-## Setup
+![UI](https://github.com/user-attachments/assets/97b29e15-0b35-44e5-97b1-948cc2ef64b9)
+
+
+## Requirements
+
+- Node.js and npm
+- [ImageMagick](https://imagemagick.org/) with the `magick` command available on your `PATH`
+
+On macOS, install ImageMagick with:
 
 ```bash
-# 1. Install ImageMagick (if you don't have it)
 brew install imagemagick
+```
 
-# 2. Install app dependencies
-cd markdown-blog-editor
+## Run the editor
+
+```bash
 npm install
-
-# 3. Run it
 npm start
 ```
 
-## How it works
+`npm start` builds the bundled code editor before launching Electron.
 
-1. **File > Open** an existing `.md` post, or **File > New**, then **Save**
-   it once so the app knows which folder to put processed images in.
-2. Drag an image file onto the editor (or paste one from the clipboard).
-3. You'll be asked for alt text, then the app runs ImageMagick to resize
-   (max width, never upscales) and convert the image, saving it into an
-   `images/` subfolder next to your `.md` file.
-4. The configured tag template is inserted at your cursor with the new
-   image path filled in.
+## Hugo project workflow
 
-## Customizing the inserted tag
+Open the root of a Hugo project with **Open project**. Almost Editor scans `content/posts` for directories containing `index.md` and shows those post bundles in the sidebar.
 
-Settings live in Electron's per-user config file (not in the repo), loaded
-via `main.js`'s `DEFAULT_CONFIG`. Easiest way to change them for now: edit
-`DEFAULT_CONFIG` in `main.js`, e.g.:
+Select a post to open its `index.md`. The editor keeps unsaved buffers in memory while you move between posts, and marks changed posts with a yellow dot in both the sidebar and bottom status area. Save to write the changes to disk.
 
-```js
-const DEFAULT_CONFIG = {
-  tagTemplate: '{% image "{src}" "{alt}" %}',  // e.g. Hugo shortcode style
-  imagesSubdir: 'images',
-  maxWidth: 1600,
-  outputFormat: 'webp',
-  quality: 82
-};
+Use **New post** to create a new page bundle. It prompts for the bundle name and creates:
+
+```text
+content/posts/<post-name>/
+├── images/
+└── index.md
 ```
 
-`{src}` and `{alt}` are replaced automatically. A future version could
-expose this in a Preferences window instead of requiring a code edit —
-happy to add that next if useful.
+The generated `index.md` uses Hugo TOML front matter:
 
-## Packaging as a real .app
-
-Once you're happy with it, use [electron-builder](https://www.electron.build/)
-to produce a signed `.app` / `.dmg`:
-
-```bash
-npm install --save-dev electron-builder
-npx electron-builder --mac
+```toml
++++
+author = ""
+title = "Post name"
+date = "yyyy-mm-dd"
+description = ""
+tags = []
++++
 ```
 
-## Live preview
+## Custom lightbox shortcode
 
-The right-hand pane renders the Markdown body as HTML as you type (debounced
-~150ms so it doesn't fight you on every keystroke), using the `marked`
-library. Hugo YAML (`---`) and TOML (`+++`) front matter is removed before
-rendering, matching Hugo's treatment of it. Image paths are automatically
-rewritten to `file://` URLs so images you've just inserted show up
-immediately. Click "Hide Preview" in the toolbar to go full-width on the
-editor.
+The preview recognizes this custom Hugo lightbox macro:
 
-## Known limitations / next steps
+```go
+{{< lightbox src="images/image_1.jpg" thumb="images/image_1_thumb.jpg" alt="Image 1" >}}
+```
 
-- The editor is a plain `<textarea>` — no Markdown syntax highlighting yet.
-  Swapping in CodeMirror 6 would be the natural upgrade.
-- Preview styling is generic; if your blog has custom CSS classes (like
-  the `.post-image` in the default tag template), the preview won't apply
-  that specific styling unless you add matching rules to `renderer/style.css`.
-- Config is edited by hand in `main.js` for now, not through a UI.
-- Only local files are supported (no direct upload to a remote blog host);
-  that could be added as a separate "Publish" step calling `scp`/`rsync`
-  or your static site generator's CLI.
+It renders the thumbnail in the preview. Clicking it opens the full image in the editor's built-in lightbox overlay. Both paths are resolved relative to the current post bundle, so images in the adjacent `images/` directory work without extra configuration.
+
+The preview also understands Hugo references in Markdown links, for example:
+
+```md
+[Film scanning]({{< ref "/posts/film_scanning" >}})
+```
+
+Clicking a previewed reference opens the target post in the project sidebar.
+
+## Image workflow
+
+Drag an image into the editor to create two JPEG files in the current post's `images/` directory using `magick mogrify`:
+
+| Output | Default resize | Default quality |
+| --- | --- | --- |
+| `images/image_name.jpg` | `1500x1500` | `70` |
+| `images/image_name_thumb.jpg` | `500x500` | `60` |
+
+Almost Editor then inserts:
+
+```go
+{{< lightbox src="images/image_name.jpg" thumb="images/image_name_thumb.jpg" alt="" >}}
+```
+
+Use **Image options** to change the full-size and thumbnail resize dimensions and JPEG quality. These settings are saved and reused for later images; the dialog also includes a reset-to-defaults action.
+
+## Features
+
+- Markdown syntax highlighting, Hugo shortcode highlighting, line numbers, and configurable editor text size (9–20px)
+- Live Hugo-oriented Markdown preview with YAML and TOML front matter removed
+- Lightbox and Hugo `ref` shortcode preview support
+- Resizable project sidebar, editor, and preview panes
+- Light and dark themes, plus a system-theme option
+- Persistent theme, text size, image settings, last file directory, and last Hugo project
+- Project sidebar for Hugo post bundles and in-app post creation
+- Unsaved-change indicators and in-memory drafts while switching posts
+- Image conversion and lightbox macro insertion powered by ImageMagick
+
+## Notes
+
+The editor preview is a focused local preview rather than a full Hugo site build. Hugo templates, layouts, and arbitrary shortcodes outside the supported lightbox and `ref` forms are rendered by Hugo itself when you build your site.
