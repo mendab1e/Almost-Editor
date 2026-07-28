@@ -172,9 +172,16 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 .modal-actions button[type="submit"] { color: #fff; background: #2563eb; border-color: #2563eb; }
 .modal-error { min-height: 18px; margin: 7px 0 0; color: #e06c75; font-size: 12px; }
 #panes.preview-hidden #editor { flex: 1 1 100%; }
-#drop-hint {
+#status {
   position: fixed;
-  bottom: 12px; right: 16px;
-  font-size: 11px;
-  color: var(--muted);
+  z-index: 12;
+  left: 16px;
+  bottom: 12px;
+  max-width: min(480px, calc(100% - 32px));
+  padding: 6px 9px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--preview-bg) 92%, transparent);
+  font-size: 12px;
+  pointer-events: none;
 }
+#status:empty { display: none; }
