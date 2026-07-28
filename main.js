@@ -77,7 +77,7 @@ function createWindow() {
 
 function newFile() {
   currentFilePath = null;
-  mainWindow.webContents.send('file-opened', { filePath: null, content: '' });
+  mainWindow.webContents.send('file-opened', { filePath: null, content: '', projectPath: null });
 }
 
 function openFile() {
@@ -94,7 +94,7 @@ function openFile() {
   const content = fs.readFileSync(filePath, 'utf8');
   currentFilePath = filePath;
   saveConfig({ ...cfg, lastOpenedDirectory: path.dirname(filePath) });
-  mainWindow.webContents.send('file-opened', { filePath, content });
+  mainWindow.webContents.send('file-opened', { filePath, content, projectPath: null });
 }
 
 function listHugoPosts(projectPath) {
@@ -171,7 +171,7 @@ ipcMain.handle('open-hugo-post', (event, { projectPath, relativePath }) => {
   currentFilePath = postPath;
   const cfg = loadConfig();
   saveConfig({ ...cfg, lastOpenedDirectory: path.dirname(postPath), lastHugoProject: projectPath });
-  mainWindow.webContents.send('file-opened', { filePath: postPath, content });
+  mainWindow.webContents.send('file-opened', { filePath: postPath, content, projectPath });
   return { ok: true, filePath: postPath };
 });
 
@@ -212,7 +212,7 @@ ipcMain.handle('create-hugo-post', (event, { projectPath, name }) => {
     const cfg = loadConfig();
     saveConfig({ ...cfg, lastOpenedDirectory: postDirectory, lastHugoProject: projectPath });
     sendProjectOpened(projectPath);
-    mainWindow.webContents.send('file-opened', { filePath: indexPath, content: frontMatter });
+    mainWindow.webContents.send('file-opened', { filePath: indexPath, content: frontMatter, projectPath });
     return { ok: true, filePath: indexPath };
   } catch (error) {
     return { ok: false, error: `Could not create post: ${error.message}` };

@@ -11,6 +11,7 @@ const openProjectBtn = document.getElementById('open-project');
 const newPostBtn = document.getElementById('new-post');
 const projectNameEl = document.getElementById('project-name');
 const postListEl = document.getElementById('post-list');
+const workspaceEl = document.getElementById('workspace');
 const sidebarEl = document.getElementById('post-sidebar');
 const sidebarResizer = document.getElementById('sidebar-resizer');
 const previewResizer = document.getElementById('preview-resizer');
@@ -134,6 +135,11 @@ setupHorizontalResizer(previewResizer, () => editorHost.getBoundingClientRect().
 function balanceEditorAndPreview() {
   editorHost.style.flex = '1 1 50%';
   preview.style.flex = '1 1 50%';
+}
+
+function closeProjectSidebar() {
+  hugoProjectPath = null;
+  workspaceEl.classList.add('project-closed');
 }
 
 function renderPostList(posts) {
@@ -377,8 +383,14 @@ editor.onPaste((e) => {
 
 // --- File open/save wiring ---
 if (window.api) {
-  window.api.onFileOpened(({ filePath, content }) => {
+  window.api.onFileOpened(({ filePath, content, projectPath }) => {
     currentFilePath = filePath;
+    if (projectPath) {
+      hugoProjectPath = projectPath;
+      workspaceEl.classList.remove('project-closed');
+    } else {
+      closeProjectSidebar();
+    }
     editor.setValue(content);
     updateHeader();
     highlightCurrentPost();
@@ -387,6 +399,7 @@ if (window.api) {
 
   window.api.onProjectOpened(({ projectPath, posts }) => {
     hugoProjectPath = projectPath;
+    workspaceEl.classList.remove('project-closed');
     projectNameEl.textContent = projectPath.split('/').pop();
     projectNameEl.title = projectPath;
     renderPostList(posts);
@@ -421,6 +434,7 @@ async function saveCurrent(forcePicker) {
 // Render once after the DOM and preload bridge are both ready. Without this,
 // the preview remains stale until an input or file-open event happens.
 initializeTheme();
+balanceEditorAndPreview();
 renderPreview();
 
 // Cmd+S shortcut inside the editor itself too

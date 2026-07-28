@@ -44,7 +44,7 @@ html, body {
   gap: 10px;
   -webkit-app-region: no-drag;
 }
-#toggle-preview {
+#toggle-preview, #open-project, #new-post {
   background: var(--control-bg);
   color: var(--text);
   border: 1px solid var(--border);
@@ -53,7 +53,7 @@ html, body {
   padding: 3px 9px;
   cursor: pointer;
 }
-#toggle-preview:hover { background: var(--control-hover); }
+#toggle-preview:hover, #open-project:hover, #new-post:hover { background: var(--control-hover); }
 .theme-control { display: flex; align-items: center; gap: 5px; color: var(--muted); }
 .theme-control select { background: var(--control-bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font-size: 12px; padding: 2px 4px; }
 #panes {
@@ -66,6 +66,8 @@ html, body {
   display: flex;
   height: calc(100% - 38px);
 }
+#workspace.project-closed #post-sidebar,
+#workspace.project-closed #sidebar-resizer { display: none; }
 #post-sidebar {
   width: 230px;
   flex: 0 0 230px;
@@ -90,15 +92,6 @@ body.is-resizing { cursor: col-resize; user-select: none; }
   padding: 12px 10px 7px;
   font-size: 13px;
   font-weight: 600;
-}
-.sidebar-actions { display: flex; gap: 7px; }
-#open-project, #new-post {
-  border: 0;
-  padding: 2px 0;
-  color: #2563eb;
-  background: transparent;
-  cursor: pointer;
-  font-size: 11px;
 }
 #project-name { padding: 0 10px 9px; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #post-list { padding: 0 5px 8px; }

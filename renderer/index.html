@@ -16,18 +16,16 @@
           <option value="dark">Dark</option>
         </select>
       </label>
+      <button id="open-project" type="button">Open Project…</button>
       <button id="toggle-preview">Hide Preview</button>
       <span id="status"></span>
     </div>
   </div>
-  <div id="workspace">
+  <div id="workspace" class="project-closed">
     <aside id="post-sidebar" aria-label="Hugo posts">
       <div id="post-sidebar-header">
         <span>Posts</span>
-        <div class="sidebar-actions">
-          <button id="new-post" type="button">New Post…</button>
-          <button id="open-project" type="button">Open Project…</button>
-        </div>
+        <button id="new-post" type="button">New Post…</button>
       </div>
       <div id="project-name">No Hugo project open</div>
       <nav id="post-list"></nav>
