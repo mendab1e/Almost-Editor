@@ -18,7 +18,8 @@ const DEFAULT_CONFIG = {
   maxWidth: 1600,
   outputFormat: 'webp', // e.g. webp, jpg, png
   quality: 82,
-  theme: 'system'
+  theme: 'system',
+  lastOpenedDirectory: null
 };
 
 function loadConfig() {
@@ -78,14 +79,19 @@ function newFile() {
 }
 
 function openFile() {
+  const cfg = loadConfig();
   const result = dialog.showOpenDialogSync(mainWindow, {
     properties: ['openFile'],
-    filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }]
+    filters: [{ name: 'Markdown', extensions: ['md', 'markdown'] }],
+    // Start from the post currently being edited, or the last directory the
+    // user opened a post from—even after the app has been restarted.
+    defaultPath: currentFilePath ? path.dirname(currentFilePath) : cfg.lastOpenedDirectory || undefined
   });
   if (!result || !result[0]) return;
   const filePath = result[0];
   const content = fs.readFileSync(filePath, 'utf8');
   currentFilePath = filePath;
+  saveConfig({ ...cfg, lastOpenedDirectory: path.dirname(filePath) });
   mainWindow.webContents.send('file-opened', { filePath, content });
 }
 
@@ -106,13 +112,17 @@ ipcMain.handle('open-file-dialog', () => {
 ipcMain.handle('save-file', async (event, { content, filePath }) => {
   let targetPath = filePath || currentFilePath;
   if (!targetPath) {
+    const cfg = loadConfig();
     targetPath = dialog.showSaveDialogSync(mainWindow, {
-      filters: [{ name: 'Markdown', extensions: ['md'] }]
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+      defaultPath: cfg.lastOpenedDirectory || undefined
     });
     if (!targetPath) return { ok: false };
   }
   fs.writeFileSync(targetPath, content, 'utf8');
   currentFilePath = targetPath;
+  const cfg = loadConfig();
+  saveConfig({ ...cfg, lastOpenedDirectory: path.dirname(targetPath) });
   return { ok: true, filePath: targetPath };
 });
 

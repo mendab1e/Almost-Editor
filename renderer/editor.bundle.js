@@ -25135,13 +25135,39 @@ var lightTheme = [
     "&": { height: "100%", color: "#1f2937", backgroundColor: "#ffffff" },
     ".cm-scroller": { fontFamily: '"SF Mono", Menlo, monospace', fontSize: "15px", lineHeight: "1.6" },
     ".cm-content": { padding: "24px 6%" },
-    ".cm-gutters": { border: "none", color: "#98a2b3", backgroundColor: "#ffffff", paddingTop: "24px" },
+    // CodeMirror positions gutter entries relative to the document. Adding
+    // matching content padding here shifts every line number down one line.
+    ".cm-gutters": { border: "none", color: "#98a2b3", backgroundColor: "#ffffff" },
     ".cm-activeLine": { backgroundColor: "#f8fafc" },
     ".cm-activeLineGutter": { backgroundColor: "#f8fafc" },
     ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": { backgroundColor: "#c7d7fe" }
   }),
   lightHighlighting
 ];
+function shortcodeDecorations(view) {
+  const ranges = [];
+  const shortcodes = /\{\{<[\s\S]*?>\}\}/g;
+  const text = view.state.doc.toString();
+  let match;
+  while (match = shortcodes.exec(text)) {
+    ranges.push(Decoration.mark({ class: "cm-hugo-shortcode" }).range(match.index, match.index + match[0].length));
+  }
+  return Decoration.set(ranges, true);
+}
+var hugoShortcodeHighlighting = ViewPlugin.fromClass(class {
+  constructor(view) {
+    this.decorations = shortcodeDecorations(view);
+  }
+  update(update) {
+    if (update.docChanged) this.decorations = shortcodeDecorations(update.view);
+  }
+}, {
+  decorations: (plugin) => plugin.decorations
+});
+var shortcodeTheme = EditorView.baseTheme({
+  ".cm-hugo-shortcode": { color: "#c2410c", backgroundColor: "#fff7ed", borderRadius: "3px" },
+  ".cm-editor.cm-dark .cm-hugo-shortcode": { color: "#fdba74", backgroundColor: "#431407" }
+});
 function createMarkdownEditor(parent, onChange) {
   const theme2 = new Compartment();
   let ignoreChange = false;
@@ -25152,6 +25178,8 @@ function createMarkdownEditor(parent, onChange) {
         history(),
         lineNumbers(),
         markdown(),
+        hugoShortcodeHighlighting,
+        shortcodeTheme,
         keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
         EditorView.lineWrapping,
         EditorView.updateListener.of((update) => {

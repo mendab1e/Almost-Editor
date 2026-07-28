@@ -16,7 +16,7 @@ let previewVisible = true;
 let renderDebounce = null;
 let savedConfig = { theme: 'system' };
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
-const editor = createMarkdownEditor(editorHost, scheduleRender);
+const editor = createMarkdownEditor(editorHost, handleEditorChange);
 
 function resolvedTheme(choice = savedConfig.theme) {
   return choice === 'system' ? (systemTheme.matches ? 'dark' : 'light') : choice;
@@ -58,8 +58,29 @@ systemTheme.addEventListener('change', () => {
 
 function withoutHugoFrontMatter(text) {
   const source = text || '';
-  const match = source.match(/^(---|\+\+\+)\s*\r?\n[\s\S]*?\r?\n\1\s*(?:\r?\n|$)/);
+  const match = source.match(/^(---|\+\+\+)[ \t]*\r?\n[\s\S]*?\r?\n\1[ \t]*(?:\r?\n|$)/);
   return match ? source.slice(match[0].length) : source;
+}
+
+function titleFromFrontMatter(text) {
+  const source = text || '';
+  const match = source.match(/^(---|\+\+\+)[ \t]*\r?\n([\s\S]*?)\r?\n\1[ \t]*(?:\r?\n|$)/);
+  if (!match) return '';
+
+  const title = match[2].match(/^\s*title\s*(?::|=)\s*(.+?)\s*$/mi);
+  if (!title) return '';
+  return title[1].replace(/\s+#.*$/, '').replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, '$1$2').trim();
+}
+
+function updateHeader() {
+  const filename = currentFilePath ? currentFilePath.split('/').pop() : 'Untitled.md';
+  const title = titleFromFrontMatter(editor.getValue());
+  filenameEl.textContent = title ? `${filename} · ${title}` : filename;
+}
+
+function handleEditorChange() {
+  updateHeader();
+  scheduleRender();
 }
 
 function escapeHtml(value) {
@@ -93,7 +114,9 @@ function expandLightboxShortcodes(markdown) {
     return placeholder;
   });
 
-  let html = window.marked.parse(expanded, { breaks: true });
+  // Hugo's Goldmark renderer treats an ordinary source newline as whitespace,
+  // not as an HTML <br>. This keeps URLs and other inline Markdown together.
+  let html = window.marked.parse(expanded, { breaks: false });
   for (const { placeholder, figure } of replacements) {
     html = html.replace(`<p>${placeholder}</p>\n`, figure);
     html = html.replace(placeholder, figure);
@@ -226,7 +249,7 @@ if (window.api) {
   window.api.onFileOpened(({ filePath, content }) => {
     currentFilePath = filePath;
     editor.setValue(content);
-    filenameEl.textContent = filePath ? filePath.split('/').pop() : 'Untitled.md';
+    updateHeader();
     renderPreview();
   });
 
@@ -248,7 +271,7 @@ async function saveCurrent(forcePicker) {
   });
   if (result.ok) {
     currentFilePath = result.filePath;
-    filenameEl.textContent = currentFilePath.split('/').pop();
+    updateHeader();
     setStatus('Saved');
     renderPreview(); // Resolve shortcode image paths once this post has a folder.
   }
