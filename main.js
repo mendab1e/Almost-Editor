@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { execFile } = require('child_process');
 
 app.setName('Almost Editor');
@@ -10,14 +11,12 @@ let currentFilePath = null; // path of the .md file currently open
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
 const DEFAULT_CONFIG = {
-  // {src} = relative path to processed image, {alt} = alt text you type in the prompt
-  tagTemplate: '![{alt}]({src}){: .post-image}',
   // Where processed images get saved, relative to the folder the .md file lives in
   imagesSubdir: 'images',
-  // ImageMagick conversion settings
-  maxWidth: 1600,
-  outputFormat: 'webp', // e.g. webp, jpg, png
-  quality: 82,
+  imageResize: '1500x1500',
+  imageQuality: 70,
+  thumbnailResize: '500x500',
+  thumbnailQuality: 60,
   theme: 'system',
   fontSize: 15,
   lastOpenedDirectory: null,
@@ -237,8 +236,21 @@ ipcMain.handle('save-file', async (event, { content, filePath }) => {
   return { ok: true, filePath: targetPath };
 });
 
-// Process a dropped/pasted image with ImageMagick and return the tag text to insert.
-ipcMain.handle('process-image', async (event, { sourcePath, alt }) => {
+function mogrifyImage(inputPath, outputDirectory, resize, quality) {
+  return new Promise((resolve, reject) => {
+    execFile('magick', ['mogrify', '-path', outputDirectory, '-format', 'jpg', '-resize', resize, '-quality', String(quality), inputPath], (error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+}
+
+// Process a dropped/pasted image into a full image and thumbnail, then return
+// the Hugo lightbox shortcode to insert at the cursor.
+ipcMain.handle('process-image', async (event, { sourcePath }) => {
+  if (typeof sourcePath !== 'string' || !sourcePath) {
+    return { ok: false, error: 'Could not read the dropped image path.' };
+  }
   const cfg = loadConfig();
 
   if (!currentFilePath) {
@@ -251,39 +263,26 @@ ipcMain.handle('process-image', async (event, { sourcePath, alt }) => {
 
   const baseName = path.basename(sourcePath, path.extname(sourcePath));
   const safeName = baseName.replace(/[^a-z0-9-_]/gi, '-').toLowerCase();
-  const outputName = `${safeName}-${Date.now()}.${cfg.outputFormat}`;
-  const outputPath = path.join(imagesDir, outputName);
+  const extension = path.extname(sourcePath) || '.image';
+  const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'almost-editor-image-'));
+  const fullInput = path.join(tempDirectory, `${safeName}${extension}`);
+  const thumbInput = path.join(tempDirectory, `${safeName}_thumb${extension}`);
 
-  const args = [
-    sourcePath,
-    '-resize', `${cfg.maxWidth}x>`, // only shrink, never enlarge
-    '-strip'
-  ];
-  if (['jpg', 'jpeg', 'webp'].includes(cfg.outputFormat)) {
-    args.push('-quality', String(cfg.quality));
+  try {
+    // mogrify uses its input filename for the output filename. Stage two copies
+    // with the desired names so it produces image.jpg and image_thumb.jpg.
+    fs.copyFileSync(sourcePath, fullInput);
+    fs.copyFileSync(sourcePath, thumbInput);
+    await mogrifyImage(fullInput, imagesDir, cfg.imageResize, cfg.imageQuality);
+    await mogrifyImage(thumbInput, imagesDir, cfg.thumbnailResize, cfg.thumbnailQuality);
+    const src = path.posix.join(cfg.imagesSubdir, `${safeName}.jpg`);
+    const thumb = path.posix.join(cfg.imagesSubdir, `${safeName}_thumb.jpg`);
+    return { ok: true, tag: `{{< lightbox src="${src}" thumb="${thumb}" alt="" >}}` };
+  } catch (error) {
+    return { ok: false, error: `ImageMagick mogrify failed: ${error.message}. Is ImageMagick installed? (brew install imagemagick)` };
+  } finally {
+    fs.rmSync(tempDirectory, { recursive: true, force: true });
   }
-  args.push(outputPath);
-
-  return new Promise((resolve) => {
-    execFile('magick', args, (err, stdout, stderr) => {
-      if (err) {
-        // Fall back to legacy `convert` binary name if `magick` isn't on PATH
-        execFile('convert', args, (err2, stdout2, stderr2) => {
-          if (err2) {
-            resolve({ ok: false, error: `ImageMagick failed: ${err2.message}. Is ImageMagick installed? (brew install imagemagick)` });
-            return;
-          }
-          const relSrc = path.join(cfg.imagesSubdir, outputName);
-          const tag = cfg.tagTemplate.replace('{alt}', alt || '').replace('{src}', relSrc);
-          resolve({ ok: true, tag });
-        });
-        return;
-      }
-      const relSrc = path.join(cfg.imagesSubdir, outputName);
-      const tag = cfg.tagTemplate.replace('{alt}', alt || '').replace('{src}', relSrc);
-      resolve({ ok: true, tag });
-    });
-  });
 });
 
 app.whenReady().then(() => {

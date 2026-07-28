@@ -31,6 +31,7 @@
           <option value="20">20</option>
         </select>
       </label>
+      <button id="image-options" type="button">Image options</button>
       <button id="open-project" type="button">Open project</button>
       <button id="toggle-preview" type="button" aria-label="Hide preview" title="Hide preview">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Zm9.5 3.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="m3 3 18 18"/></svg>
@@ -67,6 +68,27 @@
       <div class="modal-actions">
         <button id="cancel-new-post" type="button">Cancel</button>
         <button type="submit">Create Post</button>
+      </div>
+    </form>
+  </div>
+  <div id="image-options-dialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="image-options-title">
+    <form id="image-options-form" class="modal-card">
+      <h2 id="image-options-title">Image options</h2>
+      <div class="image-options-grid">
+        <label for="image-resize">Image resize</label>
+        <input id="image-resize" name="imageResize" placeholder="1500x1500" required>
+        <label for="image-quality">Image quality</label>
+        <input id="image-quality" name="imageQuality" type="number" min="0" max="100" required>
+        <label for="thumbnail-resize">Thumbnail resize</label>
+        <input id="thumbnail-resize" name="thumbnailResize" placeholder="500x500" required>
+        <label for="thumbnail-quality">Thumbnail quality</label>
+        <input id="thumbnail-quality" name="thumbnailQuality" type="number" min="0" max="100" required>
+      </div>
+      <p id="image-options-error" class="modal-error" role="alert"></p>
+      <div class="modal-actions">
+        <button id="reset-image-options" type="button">Reset defaults</button>
+        <button id="cancel-image-options" type="button">Cancel</button>
+        <button type="submit">Save options</button>
       </div>
     </form>
   </div>

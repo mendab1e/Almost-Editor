@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   getConfig: () => ipcRenderer.invoke('get-config'),
@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('api', {
   createHugoPost: (payload) => ipcRenderer.invoke('create-hugo-post', payload),
   saveFile: (payload) => ipcRenderer.invoke('save-file', payload),
   processImage: (payload) => ipcRenderer.invoke('process-image', payload),
+  getPathForFile: (file) => webUtils.getPathForFile(file),
 
   onFileOpened: (callback) => ipcRenderer.on('file-opened', (event, data) => callback(data)),
   onProjectOpened: (callback) => ipcRenderer.on('project-opened', (event, data) => callback(data)),

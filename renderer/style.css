@@ -44,7 +44,7 @@ html, body {
   gap: 10px;
   -webkit-app-region: no-drag;
 }
-#toggle-preview, #open-project, #new-post {
+#toggle-preview, #open-project, #new-post, #image-options {
   background: var(--control-bg);
   color: var(--text);
   border: 1px solid var(--border);
@@ -55,7 +55,7 @@ html, body {
 }
 #toggle-preview { display: inline-flex; align-items: center; justify-content: center; width: 30px; padding: 3px; }
 #toggle-preview svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; }
-#toggle-preview:hover, #open-project:hover, #new-post:hover { background: var(--control-hover); }
+#toggle-preview:hover, #open-project:hover, #new-post:hover, #image-options:hover { background: var(--control-hover); }
 .theme-control { display: flex; align-items: center; gap: 5px; color: var(--muted); }
 .theme-control select { background: var(--control-bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font-size: 12px; padding: 2px 4px; }
 #panes {
@@ -167,6 +167,8 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 .modal-card h2 { margin: 0 0 16px; font-size: 17px; }
 .modal-card label { display: block; margin-bottom: 6px; font-size: 13px; }
 .modal-card input { width: 100%; padding: 7px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--app-bg); color: var(--text); }
+.image-options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; align-items: center; }
+.image-options-grid label { margin: 0; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .modal-actions button { padding: 5px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--control-bg); color: var(--text); cursor: pointer; }
 .modal-actions button[type="submit"] { color: #fff; background: #2563eb; border-color: #2563eb; }

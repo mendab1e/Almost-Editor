@@ -8,6 +8,7 @@ const filenameEl = document.getElementById('filename');
 const statusEl = document.getElementById('status');
 const themeSelect = document.getElementById('theme-select');
 const fontSizeSelect = document.getElementById('font-size-select');
+const imageOptionsBtn = document.getElementById('image-options');
 const openProjectBtn = document.getElementById('open-project');
 const newPostBtn = document.getElementById('new-post');
 const projectNameEl = document.getElementById('project-name');
@@ -21,6 +22,15 @@ const newPostForm = document.getElementById('new-post-form');
 const newPostName = document.getElementById('new-post-name');
 const newPostError = document.getElementById('new-post-error');
 const cancelNewPostBtn = document.getElementById('cancel-new-post');
+const imageOptionsDialog = document.getElementById('image-options-dialog');
+const imageOptionsForm = document.getElementById('image-options-form');
+const imageResizeInput = document.getElementById('image-resize');
+const imageQualityInput = document.getElementById('image-quality');
+const thumbnailResizeInput = document.getElementById('thumbnail-resize');
+const thumbnailQualityInput = document.getElementById('thumbnail-quality');
+const imageOptionsError = document.getElementById('image-options-error');
+const cancelImageOptionsBtn = document.getElementById('cancel-image-options');
+const resetImageOptionsBtn = document.getElementById('reset-image-options');
 const lightboxEl = document.getElementById('preview-lightbox');
 const lightboxImage = document.getElementById('lightbox-image');
 const closeLightboxBtn = document.getElementById('close-lightbox');
@@ -341,6 +351,57 @@ openProjectBtn.addEventListener('click', async () => {
   await window.api.openHugoProjectDialog();
 });
 
+function openImageOptions() {
+  imageResizeInput.value = savedConfig.imageResize || '1500x1500';
+  imageQualityInput.value = savedConfig.imageQuality ?? 70;
+  thumbnailResizeInput.value = savedConfig.thumbnailResize || '500x500';
+  thumbnailQualityInput.value = savedConfig.thumbnailQuality ?? 60;
+  imageOptionsError.textContent = '';
+  imageOptionsDialog.classList.remove('hidden');
+  imageResizeInput.focus();
+}
+
+function closeImageOptions() {
+  imageOptionsDialog.classList.add('hidden');
+}
+
+imageOptionsBtn.addEventListener('click', openImageOptions);
+cancelImageOptionsBtn.addEventListener('click', closeImageOptions);
+resetImageOptionsBtn.addEventListener('click', () => {
+  imageResizeInput.value = '1500x1500';
+  imageQualityInput.value = '70';
+  thumbnailResizeInput.value = '500x500';
+  thumbnailQualityInput.value = '60';
+  imageOptionsError.textContent = '';
+});
+imageOptionsDialog.addEventListener('click', (event) => {
+  if (event.target === imageOptionsDialog) closeImageOptions();
+});
+imageOptionsForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const imageResize = imageResizeInput.value.trim();
+  const thumbnailResize = thumbnailResizeInput.value.trim();
+  const imageQuality = Number(imageQualityInput.value);
+  const thumbnailQuality = Number(thumbnailQualityInput.value);
+  if (!/^\d+x\d+$/i.test(imageResize) || !/^\d+x\d+$/i.test(thumbnailResize) ||
+      !Number.isInteger(imageQuality) || !Number.isInteger(thumbnailQuality) ||
+      imageQuality < 0 || imageQuality > 100 || thumbnailQuality < 0 || thumbnailQuality > 100) {
+    imageOptionsError.textContent = 'Use dimensions such as 1500x1500 and quality values from 0 to 100.';
+    return;
+  }
+  savedConfig = { ...savedConfig, imageResize, imageQuality, thumbnailResize, thumbnailQuality };
+  if (window.api) {
+    try {
+      savedConfig = await window.api.saveConfig(savedConfig);
+      closeImageOptions();
+      setStatus('Image options saved');
+    } catch (error) {
+      imageOptionsError.textContent = 'Image options could not be saved.';
+      console.error('Unable to save image options:', error);
+    }
+  }
+});
+
 newPostBtn.addEventListener('click', async () => {
   if (!hugoProjectPath || !window.api) {
     setStatus('Open a Hugo project before creating a post', true);
@@ -401,9 +462,8 @@ async function handleImageFile(filePath) {
     setStatus('Image processing is unavailable because the Electron API did not load', true);
     return;
   }
-  const alt = window.prompt('Alt text for this image (used in the tag):', '');
   setStatus('Converting image…');
-  const result = await window.api.processImage({ sourcePath: filePath, alt: alt || '' });
+  const result = await window.api.processImage({ sourcePath: filePath });
   if (!result.ok) {
     setStatus(result.error, true);
     window.alert(result.error);
@@ -421,8 +481,8 @@ document.addEventListener('drop', (e) => {
   const files = Array.from(e.dataTransfer.files);
   const imageFile = files.find(f => /\.(png|jpe?g|gif|heic|tiff?|bmp|webp)$/i.test(f.name));
   if (imageFile) {
-    // Electron's File objects expose a real filesystem path
-    handleImageFile(imageFile.path);
+    const sourcePath = window.api?.getPathForFile(imageFile) || imageFile.path;
+    handleImageFile(sourcePath);
   }
 });
 
@@ -433,9 +493,10 @@ editor.onPaste((e) => {
   const fileItem = items.find(i => i.kind === 'file');
   if (fileItem) {
     const file = fileItem.getAsFile();
-    if (file && file.path) {
+    const sourcePath = file && (window.api?.getPathForFile(file) || file.path);
+    if (sourcePath) {
       e.preventDefault();
-      handleImageFile(file.path);
+      handleImageFile(sourcePath);
     }
   }
 });
@@ -500,6 +561,10 @@ renderPreview();
 
 // Cmd+S shortcut inside the editor itself too
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !imageOptionsDialog.classList.contains('hidden')) {
+    closeImageOptions();
+    return;
+  }
   if (e.key === 'Escape' && !newPostDialog.classList.contains('hidden')) {
     closeNewPostDialog();
     return;
