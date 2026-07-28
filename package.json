@@ -6,6 +6,7 @@
   "main": "main.js",
   "scripts": {
     "build": "esbuild renderer/editor-source.js --bundle --format=esm --platform=browser --outfile=renderer/editor.bundle.js",
+    "test": "node --test",
     "start": "npm run build && electron .",
     "pack:mac": "npm run build && electron-builder --mac dir --arm64",
     "dist:mac": "npm run build && electron-builder --mac dmg --arm64"

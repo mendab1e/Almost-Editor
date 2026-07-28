@@ -3,6 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { execFile } = require('child_process');
+const { createHugoFrontMatter, isValidPostName, listHugoPosts } = require('./lib/hugo-project');
+const { buildMogrifyArgs } = require('./lib/image-processing');
 
 app.setName('Almost Editor');
 
@@ -97,29 +99,6 @@ function openFile() {
   mainWindow.webContents.send('file-opened', { filePath, content, projectPath: null });
 }
 
-function listHugoPosts(projectPath) {
-  const postsRoot = path.join(projectPath, 'content', 'posts');
-  if (!fs.existsSync(postsRoot) || !fs.statSync(postsRoot).isDirectory()) {
-    throw new Error('This folder does not contain content/posts. Select your Hugo project root.');
-  }
-
-  const posts = [];
-  function walk(directory) {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-      const fullPath = path.join(directory, entry.name);
-      const indexPath = path.join(fullPath, 'index.md');
-      if (fs.existsSync(indexPath) && fs.statSync(indexPath).isFile()) {
-        const relativePath = path.relative(postsRoot, fullPath);
-        posts.push({ name: relativePath, relativePath });
-      }
-      walk(fullPath);
-    }
-  }
-  walk(postsRoot);
-  return posts.sort((a, b) => a.name.localeCompare(b.name));
-}
-
 function sendProjectOpened(projectPath) {
   const posts = listHugoPosts(projectPath);
   mainWindow.webContents.send('project-opened', { projectPath, posts });
@@ -177,7 +156,7 @@ ipcMain.handle('open-hugo-post', (event, { projectPath, relativePath }) => {
 
 ipcMain.handle('create-hugo-post', (event, { projectPath, name }) => {
   const postName = String(name || '').trim();
-  if (!postName || postName === '.' || postName === '..' || path.basename(postName) !== postName) {
+  if (!isValidPostName(postName)) {
     return { ok: false, error: 'Enter a valid post directory name without path separators.' };
   }
 
@@ -193,16 +172,7 @@ ipcMain.handle('create-hugo-post', (event, { projectPath, name }) => {
 
   const now = new Date();
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const frontMatter = [
-    '+++',
-    'author: ""',
-    `title: ${JSON.stringify(postName)}`,
-    `date: "${date}"`,
-    'description: ""',
-    'tags: []',
-    '+++',
-    ''
-  ].join('\n');
+  const frontMatter = createHugoFrontMatter(postName, date);
 
   try {
     fs.mkdirSync(path.join(postDirectory, 'images'), { recursive: true });
@@ -242,7 +212,7 @@ function mogrifyImage(inputPath, outputDirectory, resize, quality) {
   const magickPath = ['/opt/homebrew/bin/magick', '/usr/local/bin/magick', 'magick']
     .find((candidate) => candidate === 'magick' || fs.existsSync(candidate));
   return new Promise((resolve, reject) => {
-    execFile(magickPath, ['mogrify', '-path', outputDirectory, '-format', 'jpg', '-resize', resize, '-quality', String(quality), inputPath], (error) => {
+    execFile(magickPath, buildMogrifyArgs(inputPath, outputDirectory, resize, quality), (error) => {
       if (error) reject(error);
       else resolve();
     });

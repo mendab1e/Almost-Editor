@@ -1,4 +1,5 @@
 import { createMarkdownEditor } from './editor.bundle.js';
+import { expandHugoRefLinks, titleFromFrontMatter, withoutHugoFrontMatter } from './markdown-tools.mjs';
 
 const editorHost = document.getElementById('editor');
 const preview = document.getElementById('preview');
@@ -103,22 +104,6 @@ fontSizeSelect.addEventListener('change', async () => {
 systemTheme.addEventListener('change', () => {
   if (savedConfig.theme === 'system') applyTheme();
 });
-
-function withoutHugoFrontMatter(text) {
-  const source = text || '';
-  const match = source.match(/^(---|\+\+\+)[ \t]*\r?\n[\s\S]*?\r?\n\1[ \t]*(?:\r?\n|$)/);
-  return match ? source.slice(match[0].length) : source;
-}
-
-function titleFromFrontMatter(text) {
-  const source = text || '';
-  const match = source.match(/^(---|\+\+\+)[ \t]*\r?\n([\s\S]*?)\r?\n\1[ \t]*(?:\r?\n|$)/);
-  if (!match) return '';
-
-  const title = match[2].match(/^\s*title\s*(?::|=)\s*(.+?)\s*$/mi);
-  if (!title) return '';
-  return title[1].replace(/\s+#.*$/, '').replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, '$1$2').trim();
-}
 
 function updateHeader() {
   const title = titleFromFrontMatter(editor.getValue());
@@ -292,16 +277,6 @@ function expandLightboxShortcodes(markdown) {
     html = html.replace(placeholder, figure);
   }
   return html;
-}
-
-function expandHugoRefLinks(markdown) {
-  // Marked cannot parse a Hugo shortcode as a Markdown link destination. Keep
-  // the link text intact, but use a local scheme that the preview can route to
-  // the referenced post bundle.
-  return markdown.replace(
-    /\[([^\]]+)\]\(\s*\{\{<\s*ref\s+["']([^"']+)["']\s*>\}\}\s*\)/gi,
-    (fullMatch, label, target) => `[${label}](hugo-ref:${target})`
-  );
 }
 
 function localPreviewUrl(source) {

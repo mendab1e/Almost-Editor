@@ -1,7 +1,8 @@
 # Almost Editor
 
 Almost Editor is a desktop Markdown editor tailored to [Hugo](https://gohugo.io) blogs that use page bundles and a Lightbox for rendering images.
-I built it to write posts for my blog, https://blog.almostinfocus.com.
+
+This project is vibecoded. I built it to write posts for my blog, https://blog.almostinfocus.com.
 While Markdown files can be edited anywhere, manually converting images and inserting shortcodes was always cumbersome.
 
 ![UI](https://github.com/user-attachments/assets/97b29e15-0b35-44e5-97b1-948cc2ef64b9)
@@ -26,6 +27,16 @@ npm start
 ```
 
 `npm start` builds the bundled code editor before launching Electron.
+
+## Tests
+
+Run the focused unit/spec suite with:
+
+```bash
+npm test
+```
+
+The suite covers Hugo project discovery, generated post front matter, image-processing command construction, and Hugo Markdown preprocessing.
 
 ## Hugo project workflow
 
