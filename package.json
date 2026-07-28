@@ -6,7 +6,9 @@
   "main": "main.js",
   "scripts": {
     "build": "esbuild renderer/editor-source.js --bundle --format=esm --platform=browser --outfile=renderer/editor.bundle.js",
-    "start": "npm run build && electron ."
+    "start": "npm run build && electron .",
+    "pack:mac": "npm run build && electron-builder --mac dir --arm64",
+    "dist:mac": "npm run build && electron-builder --mac dmg --arm64"
   },
   "author": "",
   "license": "MIT",
@@ -19,7 +21,19 @@
     "marked": "^12.0.0"
   },
   "devDependencies": {
+    "electron-builder": "^26.0.12",
     "electron": "^43.2.0",
     "esbuild": "^0.25.12"
+  },
+  "build": {
+    "appId": "com.mendable.almosteditor",
+    "productName": "Almost Editor",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": ["dmg"]
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    }
   }
 }

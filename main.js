@@ -237,8 +237,12 @@ ipcMain.handle('save-file', async (event, { content, filePath }) => {
 });
 
 function mogrifyImage(inputPath, outputDirectory, resize, quality) {
+  // Finder-launched apps do not always inherit Homebrew's PATH. Prefer the
+  // standard Homebrew locations before falling back to a shell-resolved name.
+  const magickPath = ['/opt/homebrew/bin/magick', '/usr/local/bin/magick', 'magick']
+    .find((candidate) => candidate === 'magick' || fs.existsSync(candidate));
   return new Promise((resolve, reject) => {
-    execFile('magick', ['mogrify', '-path', outputDirectory, '-format', 'jpg', '-resize', resize, '-quality', String(quality), inputPath], (error) => {
+    execFile(magickPath, ['mogrify', '-path', outputDirectory, '-format', 'jpg', '-resize', resize, '-quality', String(quality), inputPath], (error) => {
       if (error) reject(error);
       else resolve();
     });
