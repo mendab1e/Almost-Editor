@@ -18,6 +18,10 @@
     <div id="preview"></div>
   </div>
   <div id="drop-hint">Drop an image anywhere to convert &amp; insert it</div>
+  <div id="preview-lightbox" class="hidden" role="dialog" aria-modal="true" aria-label="Image preview">
+    <button id="close-lightbox" type="button" aria-label="Close image preview">×</button>
+    <img id="lightbox-image" alt="">
+  </div>
   <!-- Preview parsing runs in the page context so a missing optional parser
        module cannot prevent Electron's preload API from loading. -->
   <script src="../node_modules/marked/lib/marked.umd.js"></script>

@@ -4,6 +4,9 @@ const panes = document.getElementById('panes');
 const toggleBtn = document.getElementById('toggle-preview');
 const filenameEl = document.getElementById('filename');
 const statusEl = document.getElementById('status');
+const lightboxEl = document.getElementById('preview-lightbox');
+const lightboxImage = document.getElementById('lightbox-image');
+const closeLightboxBtn = document.getElementById('close-lightbox');
 
 let currentFilePath = null;
 let previewVisible = true;
@@ -15,12 +18,57 @@ function withoutHugoFrontMatter(text) {
   return match ? source.slice(match[0].length) : source;
 }
 
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[character]));
+}
+
+function parseShortcodeAttributes(source) {
+  const attributes = {};
+  const pattern = /([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s]+))/g;
+  let match;
+  while ((match = pattern.exec(source))) {
+    attributes[match[1]] = match[2] ?? match[3] ?? match[4] ?? '';
+  }
+  return attributes;
+}
+
+function expandLightboxShortcodes(markdown) {
+  const replacements = [];
+  const expanded = markdown.replace(/\{\{<\s*lightbox\b([^\n]*?)>\}\}/gi, (shortcode, attributeText) => {
+    const attributes = parseShortcodeAttributes(attributeText);
+    if (!attributes.src) return shortcode;
+
+    const src = escapeHtml(attributes.src);
+    const thumb = escapeHtml(attributes.thumb || attributes.src);
+    const alt = escapeHtml(attributes.alt || 'Image');
+    const figure = `<figure class="lightbox"><a href="${src}" data-editor-lightbox><img src="${thumb}" alt="${alt}" loading="lazy"></a>${attributes.alt ? `<figcaption>${alt}</figcaption>` : ''}</figure>`;
+    const placeholder = `@@EDITOR_LIGHTBOX_${replacements.length}@@`;
+    replacements.push({ placeholder, figure });
+    return placeholder;
+  });
+
+  let html = window.marked.parse(expanded, { breaks: true });
+  for (const { placeholder, figure } of replacements) {
+    html = html.replace(`<p>${placeholder}</p>\n`, figure);
+    html = html.replace(placeholder, figure);
+  }
+  return html;
+}
+
+function localPreviewUrl(source) {
+  if (!source || /^(https?:|file:|data:|#)/i.test(source) || !currentFilePath) return source;
+  const postDir = currentFilePath.substring(0, currentFilePath.lastIndexOf('/'));
+  return new URL(source, `file://${postDir}/`).href;
+}
+
 function renderPreview() {
   try {
     if (!window.marked) throw new Error('Markdown parser failed to load');
     // Hugo removes front matter before rendering a page. Do the same for the
     // editor preview, then render with Marked's browser bundle.
-    preview.innerHTML = window.marked.parse(withoutHugoFrontMatter(editor.value), { breaks: true });
+    preview.innerHTML = expandLightboxShortcodes(withoutHugoFrontMatter(editor.value));
   } catch (error) {
     console.error('Unable to render Markdown preview:', error);
     preview.textContent = `Preview error: ${error.message}`;
@@ -33,11 +81,10 @@ function renderPreview() {
   // absolute file:// URLs based on where the .md file lives.
   if (currentFilePath) {
     const postDir = currentFilePath.substring(0, currentFilePath.lastIndexOf('/'));
-    preview.querySelectorAll('img').forEach((img) => {
-      const src = img.getAttribute('src');
-      if (src && !/^(https?:|file:|data:)/i.test(src)) {
-        img.setAttribute('src', `file://${postDir}/${src}`);
-      }
+    preview.querySelectorAll('img, a[href]').forEach((element) => {
+      const attribute = element.tagName === 'IMG' ? 'src' : 'href';
+      const source = element.getAttribute(attribute);
+      if (source) element.setAttribute(attribute, localPreviewUrl(source));
     });
   }
 }
@@ -55,6 +102,27 @@ toggleBtn.addEventListener('click', () => {
   preview.classList.toggle('hidden', !previewVisible);
   panes.classList.toggle('preview-hidden', !previewVisible);
   toggleBtn.textContent = previewVisible ? 'Hide Preview' : 'Show Preview';
+});
+
+preview.addEventListener('click', (event) => {
+  const link = event.target.closest('a[data-editor-lightbox]');
+  if (!link) return;
+  event.preventDefault();
+  const image = link.querySelector('img');
+  lightboxImage.src = link.href;
+  lightboxImage.alt = image ? image.alt : 'Image';
+  lightboxEl.classList.remove('hidden');
+  closeLightboxBtn.focus();
+});
+
+function closeLightbox() {
+  lightboxEl.classList.add('hidden');
+  lightboxImage.removeAttribute('src');
+}
+
+closeLightboxBtn.addEventListener('click', closeLightbox);
+lightboxEl.addEventListener('click', (event) => {
+  if (event.target === lightboxEl) closeLightbox();
 });
 
 function setStatus(msg, isError) {
@@ -147,6 +215,7 @@ async function saveCurrent(forcePicker) {
     currentFilePath = result.filePath;
     filenameEl.textContent = currentFilePath.split('/').pop();
     setStatus('Saved');
+    renderPreview(); // Resolve shortcode image paths once this post has a folder.
   }
 }
 
@@ -156,6 +225,10 @@ renderPreview();
 
 // Cmd+S shortcut inside the editor itself too
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !lightboxEl.classList.contains('hidden')) {
+    closeLightbox();
+    return;
+  }
   if ((e.metaKey || e.ctrlKey) && e.key === 's') {
     e.preventDefault();
     saveCurrent(e.shiftKey);

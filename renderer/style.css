@@ -70,6 +70,19 @@ html, body {
 #preview blockquote {
   border-left: 3px solid #555; margin: 0; padding-left: 14px; color: #aaa;
 }
+#preview .lightbox { margin: 1.5em 0; }
+#preview .lightbox img { cursor: zoom-in; display: block; }
+#preview .lightbox figcaption { margin-top: 7px; color: #aaa; font-size: 13px; }
+#preview-lightbox {
+  position: fixed; inset: 0; z-index: 10; display: flex; align-items: center;
+  justify-content: center; padding: 32px; background: rgba(0, 0, 0, .88);
+}
+#preview-lightbox.hidden { display: none; }
+#preview-lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; }
+#close-lightbox {
+  position: absolute; top: 14px; right: 18px; border: 0; background: transparent;
+  color: #fff; font-size: 34px; line-height: 1; cursor: pointer;
+}
 #panes.preview-hidden #editor { flex: 1 1 100%; }
 #drop-hint {
   position: fixed;
