@@ -24,7 +24,10 @@
     <aside id="post-sidebar" aria-label="Hugo posts">
       <div id="post-sidebar-header">
         <span>Posts</span>
-        <button id="open-project" type="button">Open Project…</button>
+        <div class="sidebar-actions">
+          <button id="new-post" type="button">New Post…</button>
+          <button id="open-project" type="button">Open Project…</button>
+        </div>
       </div>
       <div id="project-name">No Hugo project open</div>
       <nav id="post-list"></nav>
@@ -40,6 +43,18 @@
   <div id="preview-lightbox" class="hidden" role="dialog" aria-modal="true" aria-label="Image preview">
     <button id="close-lightbox" type="button" aria-label="Close image preview">×</button>
     <img id="lightbox-image" alt="">
+  </div>
+  <div id="new-post-dialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="new-post-title">
+    <form id="new-post-form" class="modal-card">
+      <h2 id="new-post-title">Create new post</h2>
+      <label for="new-post-name">Post directory name</label>
+      <input id="new-post-name" name="name" autocomplete="off" required>
+      <p id="new-post-error" class="modal-error" role="alert"></p>
+      <div class="modal-actions">
+        <button id="cancel-new-post" type="button">Cancel</button>
+        <button type="submit">Create Post</button>
+      </div>
+    </form>
   </div>
   <!-- Preview parsing runs in the page context so a missing optional parser
        module cannot prevent Electron's preload API from loading. -->

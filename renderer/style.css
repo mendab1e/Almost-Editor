@@ -91,7 +91,8 @@ body.is-resizing { cursor: col-resize; user-select: none; }
   font-size: 13px;
   font-weight: 600;
 }
-#open-project {
+.sidebar-actions { display: flex; gap: 7px; }
+#open-project, #new-post {
   border: 0;
   padding: 2px 0;
   color: #2563eb;
@@ -159,6 +160,22 @@ body.is-resizing { cursor: col-resize; user-select: none; }
   position: absolute; top: 14px; right: 18px; border: 0; background: transparent;
   color: #fff; font-size: 34px; line-height: 1; cursor: pointer;
 }
+.modal {
+  position: fixed; inset: 0; z-index: 11; display: flex; align-items: center;
+  justify-content: center; padding: 24px; background: rgba(0, 0, 0, .45);
+}
+.modal.hidden { display: none; }
+.modal-card {
+  width: min(380px, 100%); padding: 20px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--preview-bg); color: var(--text); box-shadow: 0 12px 32px rgba(0, 0, 0, .25);
+}
+.modal-card h2 { margin: 0 0 16px; font-size: 17px; }
+.modal-card label { display: block; margin-bottom: 6px; font-size: 13px; }
+.modal-card input { width: 100%; padding: 7px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--app-bg); color: var(--text); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.modal-actions button { padding: 5px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--control-bg); color: var(--text); cursor: pointer; }
+.modal-actions button[type="submit"] { color: #fff; background: #2563eb; border-color: #2563eb; }
+.modal-error { min-height: 18px; margin: 7px 0 0; color: #e06c75; font-size: 12px; }
 #panes.preview-hidden #editor { flex: 1 1 100%; }
 #drop-hint {
   position: fixed;

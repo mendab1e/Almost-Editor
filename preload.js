@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('api', {
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
   openHugoProjectDialog: () => ipcRenderer.invoke('open-hugo-project-dialog'),
   openHugoPost: (payload) => ipcRenderer.invoke('open-hugo-post', payload),
+  createHugoPost: (payload) => ipcRenderer.invoke('create-hugo-post', payload),
   saveFile: (payload) => ipcRenderer.invoke('save-file', payload),
   processImage: (payload) => ipcRenderer.invoke('process-image', payload),
 

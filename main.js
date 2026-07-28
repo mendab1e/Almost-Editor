@@ -175,6 +175,50 @@ ipcMain.handle('open-hugo-post', (event, { projectPath, relativePath }) => {
   return { ok: true, filePath: postPath };
 });
 
+ipcMain.handle('create-hugo-post', (event, { projectPath, name }) => {
+  const postName = String(name || '').trim();
+  if (!postName || postName === '.' || postName === '..' || path.basename(postName) !== postName) {
+    return { ok: false, error: 'Enter a valid post directory name without path separators.' };
+  }
+
+  const postsRoot = path.resolve(projectPath, 'content', 'posts');
+  if (!fs.existsSync(postsRoot) || !fs.statSync(postsRoot).isDirectory()) {
+    return { ok: false, error: 'The Hugo project no longer contains content/posts.' };
+  }
+
+  const postDirectory = path.join(postsRoot, postName);
+  if (fs.existsSync(postDirectory)) {
+    return { ok: false, error: `A post directory named “${postName}” already exists.` };
+  }
+
+  const now = new Date();
+  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const frontMatter = [
+    '+++',
+    'author: ""',
+    `title: ${JSON.stringify(postName)}`,
+    `date: "${date}"`,
+    'description: ""',
+    'tags: []',
+    '+++',
+    ''
+  ].join('\n');
+
+  try {
+    fs.mkdirSync(path.join(postDirectory, 'images'), { recursive: true });
+    const indexPath = path.join(postDirectory, 'index.md');
+    fs.writeFileSync(indexPath, frontMatter, 'utf8');
+    currentFilePath = indexPath;
+    const cfg = loadConfig();
+    saveConfig({ ...cfg, lastOpenedDirectory: postDirectory, lastHugoProject: projectPath });
+    sendProjectOpened(projectPath);
+    mainWindow.webContents.send('file-opened', { filePath: indexPath, content: frontMatter });
+    return { ok: true, filePath: indexPath };
+  } catch (error) {
+    return { ok: false, error: `Could not create post: ${error.message}` };
+  }
+});
+
 ipcMain.handle('save-file', async (event, { content, filePath }) => {
   let targetPath = filePath || currentFilePath;
   if (!targetPath) {

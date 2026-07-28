@@ -8,11 +8,17 @@ const filenameEl = document.getElementById('filename');
 const statusEl = document.getElementById('status');
 const themeSelect = document.getElementById('theme-select');
 const openProjectBtn = document.getElementById('open-project');
+const newPostBtn = document.getElementById('new-post');
 const projectNameEl = document.getElementById('project-name');
 const postListEl = document.getElementById('post-list');
 const sidebarEl = document.getElementById('post-sidebar');
 const sidebarResizer = document.getElementById('sidebar-resizer');
 const previewResizer = document.getElementById('preview-resizer');
+const newPostDialog = document.getElementById('new-post-dialog');
+const newPostForm = document.getElementById('new-post-form');
+const newPostName = document.getElementById('new-post-name');
+const newPostError = document.getElementById('new-post-error');
+const cancelNewPostBtn = document.getElementById('cancel-new-post');
 const lightboxEl = document.getElementById('preview-lightbox');
 const lightboxImage = document.getElementById('lightbox-image');
 const closeLightboxBtn = document.getElementById('close-lightbox');
@@ -270,6 +276,38 @@ openProjectBtn.addEventListener('click', async () => {
   await window.api.openHugoProjectDialog();
 });
 
+newPostBtn.addEventListener('click', async () => {
+  if (!hugoProjectPath || !window.api) {
+    setStatus('Open a Hugo project before creating a post', true);
+    return;
+  }
+  newPostError.textContent = '';
+  newPostName.value = '';
+  newPostDialog.classList.remove('hidden');
+  newPostName.focus();
+});
+
+function closeNewPostDialog() {
+  newPostDialog.classList.add('hidden');
+}
+
+cancelNewPostBtn.addEventListener('click', closeNewPostDialog);
+newPostDialog.addEventListener('click', (event) => {
+  if (event.target === newPostDialog) closeNewPostDialog();
+});
+
+newPostForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const name = newPostName.value.trim();
+  if (!name) return;
+  const result = await window.api.createHugoPost({ projectPath: hugoProjectPath, name });
+  if (result.ok) {
+    closeNewPostDialog();
+    return;
+  }
+  newPostError.textContent = result.error || 'Could not create post';
+});
+
 postListEl.addEventListener('click', async (event) => {
   const button = event.target.closest('.post-entry');
   if (!button || !window.api || !hugoProjectPath) return;
@@ -387,6 +425,10 @@ renderPreview();
 
 // Cmd+S shortcut inside the editor itself too
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !newPostDialog.classList.contains('hidden')) {
+    closeNewPostDialog();
+    return;
+  }
   if (e.key === 'Escape' && !lightboxEl.classList.contains('hidden')) {
     closeLightbox();
     return;
