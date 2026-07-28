@@ -53,6 +53,8 @@ html, body {
   padding: 3px 9px;
   cursor: pointer;
 }
+#toggle-preview { display: inline-flex; align-items: center; justify-content: center; width: 30px; padding: 3px; }
+#toggle-preview svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; }
 #toggle-preview:hover, #open-project:hover, #new-post:hover { background: var(--control-hover); }
 .theme-control { display: flex; align-items: center; gap: 5px; color: var(--muted); }
 .theme-control select { background: var(--control-bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font-size: 12px; padding: 2px 4px; }

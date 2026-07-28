@@ -229,8 +229,18 @@ function expandLightboxShortcodes(markdown) {
   return html;
 }
 
+function expandHugoRefLinks(markdown) {
+  // Marked cannot parse a Hugo shortcode as a Markdown link destination. Keep
+  // the link text intact, but use a local scheme that the preview can route to
+  // the referenced post bundle.
+  return markdown.replace(
+    /\[([^\]]+)\]\(\s*\{\{<\s*ref\s+["']([^"']+)["']\s*>\}\}\s*\)/gi,
+    (fullMatch, label, target) => `[${label}](hugo-ref:${target})`
+  );
+}
+
 function localPreviewUrl(source) {
-  if (!source || /^(https?:|file:|data:|#)/i.test(source) || !currentFilePath) return source;
+  if (!source || /^(https?:|file:|data:|hugo-ref:|#)/i.test(source) || !currentFilePath) return source;
   const postDir = currentFilePath.substring(0, currentFilePath.lastIndexOf('/'));
   return new URL(source, `file://${postDir}/`).href;
 }
@@ -240,7 +250,8 @@ function renderPreview() {
     if (!window.marked) throw new Error('Markdown parser failed to load');
     // Hugo removes front matter before rendering a page. Do the same for the
     // editor preview, then render with Marked's browser bundle.
-    preview.innerHTML = expandLightboxShortcodes(withoutHugoFrontMatter(editor.getValue()));
+    const markdown = expandHugoRefLinks(withoutHugoFrontMatter(editor.getValue()));
+    preview.innerHTML = expandLightboxShortcodes(markdown);
   } catch (error) {
     console.error('Unable to render Markdown preview:', error);
     preview.textContent = `Preview error: ${error.message}`;
@@ -267,15 +278,40 @@ function scheduleRender() {
   renderDebounce = setTimeout(renderPreview, 150);
 }
 
+function updatePreviewToggleIcon() {
+  const eyePath = '<path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Zm9.5 3.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/>';
+  const slashPath = '<path d="m3 3 18 18"/>';
+  toggleBtn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${eyePath}${previewVisible ? slashPath : ''}</svg>`;
+}
+
 toggleBtn.addEventListener('click', () => {
   previewVisible = !previewVisible;
   preview.classList.toggle('hidden', !previewVisible);
   previewResizer.classList.toggle('hidden', !previewVisible);
   panes.classList.toggle('preview-hidden', !previewVisible);
-  toggleBtn.textContent = previewVisible ? 'Hide Preview' : 'Show Preview';
+  const label = previewVisible ? 'Hide preview' : 'Show preview';
+  toggleBtn.setAttribute('aria-label', label);
+  toggleBtn.title = label;
+  updatePreviewToggleIcon();
 });
 
 preview.addEventListener('click', (event) => {
+  const refLink = event.target.closest('a[href^="hugo-ref:"]');
+  if (refLink) {
+    event.preventDefault();
+    if (!window.api || !hugoProjectPath) {
+      setStatus('Open this Hugo project to follow post references', true);
+      return;
+    }
+    const target = refLink.getAttribute('href').slice('hugo-ref:'.length).replace(/^\/?posts\//, '').replace(/\/$/, '');
+    if (!target) {
+      setStatus('This Hugo reference does not point to a post', true);
+      return;
+    }
+    window.api.openHugoPost({ projectPath: hugoProjectPath, relativePath: target })
+      .then((result) => { if (!result.ok) setStatus(result.error || 'Could not open referenced post', true); });
+    return;
+  }
   const link = event.target.closest('a[data-editor-lightbox]');
   if (!link) return;
   event.preventDefault();
