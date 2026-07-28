@@ -1,9 +1,12 @@
-const editor = document.getElementById('editor');
+import { createMarkdownEditor } from './editor.bundle.js';
+
+const editorHost = document.getElementById('editor');
 const preview = document.getElementById('preview');
 const panes = document.getElementById('panes');
 const toggleBtn = document.getElementById('toggle-preview');
 const filenameEl = document.getElementById('filename');
 const statusEl = document.getElementById('status');
+const themeSelect = document.getElementById('theme-select');
 const lightboxEl = document.getElementById('preview-lightbox');
 const lightboxImage = document.getElementById('lightbox-image');
 const closeLightboxBtn = document.getElementById('close-lightbox');
@@ -11,6 +14,47 @@ const closeLightboxBtn = document.getElementById('close-lightbox');
 let currentFilePath = null;
 let previewVisible = true;
 let renderDebounce = null;
+let savedConfig = { theme: 'system' };
+const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
+const editor = createMarkdownEditor(editorHost, scheduleRender);
+
+function resolvedTheme(choice = savedConfig.theme) {
+  return choice === 'system' ? (systemTheme.matches ? 'dark' : 'light') : choice;
+}
+
+function applyTheme(choice = savedConfig.theme) {
+  document.documentElement.dataset.theme = resolvedTheme(choice);
+  editor.setTheme(resolvedTheme(choice));
+}
+
+async function initializeTheme() {
+  if (window.api) {
+    try {
+      savedConfig = await window.api.getConfig();
+    } catch (error) {
+      console.error('Unable to load theme preference:', error);
+    }
+  }
+  themeSelect.value = savedConfig.theme || 'system';
+  applyTheme(themeSelect.value);
+}
+
+themeSelect.addEventListener('change', async () => {
+  savedConfig = { ...savedConfig, theme: themeSelect.value };
+  applyTheme();
+  if (window.api) {
+    try {
+      savedConfig = await window.api.saveConfig(savedConfig);
+    } catch (error) {
+      setStatus('Theme preference could not be saved', true);
+      console.error('Unable to save theme preference:', error);
+    }
+  }
+});
+
+systemTheme.addEventListener('change', () => {
+  if (savedConfig.theme === 'system') applyTheme();
+});
 
 function withoutHugoFrontMatter(text) {
   const source = text || '';
@@ -68,7 +112,7 @@ function renderPreview() {
     if (!window.marked) throw new Error('Markdown parser failed to load');
     // Hugo removes front matter before rendering a page. Do the same for the
     // editor preview, then render with Marked's browser bundle.
-    preview.innerHTML = expandLightboxShortcodes(withoutHugoFrontMatter(editor.value));
+    preview.innerHTML = expandLightboxShortcodes(withoutHugoFrontMatter(editor.getValue()));
   } catch (error) {
     console.error('Unable to render Markdown preview:', error);
     preview.textContent = `Preview error: ${error.message}`;
@@ -94,8 +138,6 @@ function scheduleRender() {
   clearTimeout(renderDebounce);
   renderDebounce = setTimeout(renderPreview, 150);
 }
-
-editor.addEventListener('input', scheduleRender);
 
 toggleBtn.addEventListener('click', () => {
   previewVisible = !previewVisible;
@@ -127,19 +169,12 @@ lightboxEl.addEventListener('click', (event) => {
 
 function setStatus(msg, isError) {
   statusEl.textContent = msg;
-  statusEl.style.color = isError ? '#e06c75' : '#8f8';
+  statusEl.style.color = isError ? '#e06c75' : 'var(--success)';
   if (msg) setTimeout(() => { statusEl.textContent = ''; }, 3000);
 }
 
 function insertAtCursor(text) {
-  const start = editor.selectionStart;
-  const end = editor.selectionEnd;
-  const before = editor.value.slice(0, start);
-  const after = editor.value.slice(end);
-  editor.value = `${before}${text}${after}`;
-  const cursorPos = start + text.length;
-  editor.setSelectionRange(cursorPos, cursorPos);
-  editor.focus();
+  editor.insertAtCursor(text);
 }
 
 async function handleImageFile(filePath) {
@@ -174,7 +209,7 @@ document.addEventListener('drop', (e) => {
 
 // --- Paste (e.g. screenshot from clipboard is handled via drag/drop of a temp file;
 // pasting a file path also works if the clipboard contains one) ---
-editor.addEventListener('paste', (e) => {
+editor.onPaste((e) => {
   const items = Array.from(e.clipboardData.items || []);
   const fileItem = items.find(i => i.kind === 'file');
   if (fileItem) {
@@ -190,7 +225,7 @@ editor.addEventListener('paste', (e) => {
 if (window.api) {
   window.api.onFileOpened(({ filePath, content }) => {
     currentFilePath = filePath;
-    editor.value = content;
+    editor.setValue(content);
     filenameEl.textContent = filePath ? filePath.split('/').pop() : 'Untitled.md';
     renderPreview();
   });
@@ -208,7 +243,7 @@ async function saveCurrent(forcePicker) {
     return;
   }
   const result = await window.api.saveFile({
-    content: editor.value,
+    content: editor.getValue(),
     filePath: forcePicker ? null : currentFilePath
   });
   if (result.ok) {
@@ -221,6 +256,7 @@ async function saveCurrent(forcePicker) {
 
 // Render once after the DOM and preload bridge are both ready. Without this,
 // the preview remains stale until an input or file-open event happens.
+initializeTheme();
 renderPreview();
 
 // Cmd+S shortcut inside the editor itself too

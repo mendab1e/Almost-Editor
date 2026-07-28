@@ -3,6 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const { execFile } = require('child_process');
 
+app.setName('Almost Editor');
+
 let mainWindow;
 let currentFilePath = null; // path of the .md file currently open
 
@@ -15,7 +17,8 @@ const DEFAULT_CONFIG = {
   // ImageMagick conversion settings
   maxWidth: 1600,
   outputFormat: 'webp', // e.g. webp, jpg, png
-  quality: 82
+  quality: 82,
+  theme: 'system'
 };
 
 function loadConfig() {
