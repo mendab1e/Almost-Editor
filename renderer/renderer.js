@@ -106,8 +106,12 @@ function titleFromFrontMatter(text) {
 }
 
 function updateHeader() {
-  const filename = currentProjectPostName || (currentFilePath ? currentFilePath.split('/').pop() : 'Untitled.md');
   const title = titleFromFrontMatter(editor.getValue());
+  if (currentProjectPostName) {
+    filenameEl.textContent = title;
+    return;
+  }
+  const filename = currentFilePath ? currentFilePath.split('/').pop() : 'Untitled.md';
   filenameEl.textContent = title ? `${filename} · ${title}` : filename;
 }
 
