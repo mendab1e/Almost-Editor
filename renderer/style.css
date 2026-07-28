@@ -58,7 +58,65 @@ html, body {
 .theme-control select { background: var(--control-bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; font-size: 12px; padding: 2px 4px; }
 #panes {
   display: flex;
+  height: 100%;
+  flex: 1;
+  min-width: 0;
+}
+#workspace {
+  display: flex;
   height: calc(100% - 38px);
+}
+#post-sidebar {
+  width: 230px;
+  flex: 0 0 230px;
+  overflow: auto;
+  background: var(--preview-bg);
+  border-right: 1px solid var(--border);
+}
+.split-resizer {
+  flex: 0 0 5px;
+  position: relative;
+  z-index: 2;
+  background: var(--border);
+  cursor: col-resize;
+}
+.split-resizer:hover, body.is-resizing .split-resizer { background: #2563eb; }
+.split-resizer.hidden { display: none; }
+body.is-resizing { cursor: col-resize; user-select: none; }
+#post-sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 10px 7px;
+  font-size: 13px;
+  font-weight: 600;
+}
+#open-project {
+  border: 0;
+  padding: 2px 0;
+  color: #2563eb;
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+}
+#project-name { padding: 0 10px 9px; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#post-list { padding: 0 5px 8px; }
+.post-entry {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 4px;
+  padding: 7px 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font: 12px/1.35 "SF Mono", Menlo, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.post-entry:hover, .post-entry.active { background: var(--control-hover); }
 }
 #editor {
   flex: 1 1 50%;

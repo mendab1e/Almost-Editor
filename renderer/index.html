@@ -20,9 +20,21 @@
       <span id="status"></span>
     </div>
   </div>
-  <div id="panes">
-    <div id="editor" aria-label="Markdown editor"></div>
-    <div id="preview"></div>
+  <div id="workspace">
+    <aside id="post-sidebar" aria-label="Hugo posts">
+      <div id="post-sidebar-header">
+        <span>Posts</span>
+        <button id="open-project" type="button">Open Project…</button>
+      </div>
+      <div id="project-name">No Hugo project open</div>
+      <nav id="post-list"></nav>
+    </aside>
+    <div id="sidebar-resizer" class="split-resizer" role="separator" aria-label="Resize post sidebar" aria-orientation="vertical"></div>
+    <div id="panes">
+      <div id="editor" aria-label="Markdown editor"></div>
+      <div id="preview-resizer" class="split-resizer" role="separator" aria-label="Resize preview" aria-orientation="vertical"></div>
+      <div id="preview"></div>
+    </div>
   </div>
   <div id="drop-hint">Drop an image anywhere to convert &amp; insert it</div>
   <div id="preview-lightbox" class="hidden" role="dialog" aria-modal="true" aria-label="Image preview">

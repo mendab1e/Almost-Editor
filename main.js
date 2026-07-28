@@ -19,7 +19,8 @@ const DEFAULT_CONFIG = {
   outputFormat: 'webp', // e.g. webp, jpg, png
   quality: 82,
   theme: 'system',
-  lastOpenedDirectory: null
+  lastOpenedDirectory: null,
+  lastHugoProject: null
 };
 
 function loadConfig() {
@@ -56,6 +57,7 @@ function createWindow() {
       submenu: [
         { label: 'New', accelerator: 'CmdOrCtrl+N', click: () => newFile() },
         { label: 'Open…', accelerator: 'CmdOrCtrl+O', click: () => openFile() },
+        { label: 'Open Hugo Project…', accelerator: 'CmdOrCtrl+Shift+O', click: () => openHugoProject() },
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => mainWindow.webContents.send('request-save') },
         { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: () => mainWindow.webContents.send('request-save-as') },
         { type: 'separator' },
@@ -95,6 +97,54 @@ function openFile() {
   mainWindow.webContents.send('file-opened', { filePath, content });
 }
 
+function listHugoPosts(projectPath) {
+  const postsRoot = path.join(projectPath, 'content', 'posts');
+  if (!fs.existsSync(postsRoot) || !fs.statSync(postsRoot).isDirectory()) {
+    throw new Error('This folder does not contain content/posts. Select your Hugo project root.');
+  }
+
+  const posts = [];
+  function walk(directory) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+      const fullPath = path.join(directory, entry.name);
+      const indexPath = path.join(fullPath, 'index.md');
+      if (fs.existsSync(indexPath) && fs.statSync(indexPath).isFile()) {
+        const relativePath = path.relative(postsRoot, fullPath);
+        posts.push({ name: relativePath, relativePath });
+      }
+      walk(fullPath);
+    }
+  }
+  walk(postsRoot);
+  return posts.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function sendProjectOpened(projectPath) {
+  const posts = listHugoPosts(projectPath);
+  mainWindow.webContents.send('project-opened', { projectPath, posts });
+  return { ok: true, projectPath, posts };
+}
+
+function openHugoProject() {
+  const cfg = loadConfig();
+  const result = dialog.showOpenDialogSync(mainWindow, {
+    properties: ['openDirectory'],
+    defaultPath: cfg.lastHugoProject || cfg.lastOpenedDirectory || undefined,
+    title: 'Open Hugo Project'
+  });
+  if (!result || !result[0]) return { ok: false };
+  try {
+    const projectPath = result[0];
+    const payload = sendProjectOpened(projectPath);
+    saveConfig({ ...cfg, lastHugoProject: projectPath });
+    return payload;
+  } catch (error) {
+    dialog.showErrorBox('Cannot open Hugo project', error.message);
+    return { ok: false, error: error.message };
+  }
+}
+
 // --- IPC handlers ---
 
 ipcMain.handle('get-config', () => loadConfig());
@@ -107,6 +157,22 @@ ipcMain.handle('save-config', (event, cfg) => {
 ipcMain.handle('open-file-dialog', () => {
   openFile();
   return null;
+});
+
+ipcMain.handle('open-hugo-project-dialog', () => openHugoProject());
+
+ipcMain.handle('open-hugo-post', (event, { projectPath, relativePath }) => {
+  const postsRoot = path.resolve(projectPath, 'content', 'posts');
+  const postPath = path.resolve(postsRoot, relativePath, 'index.md');
+  if (!postPath.startsWith(`${postsRoot}${path.sep}`) || !fs.existsSync(postPath)) {
+    return { ok: false, error: 'The selected post could not be found.' };
+  }
+  const content = fs.readFileSync(postPath, 'utf8');
+  currentFilePath = postPath;
+  const cfg = loadConfig();
+  saveConfig({ ...cfg, lastOpenedDirectory: path.dirname(postPath), lastHugoProject: projectPath });
+  mainWindow.webContents.send('file-opened', { filePath: postPath, content });
+  return { ok: true, filePath: postPath };
 });
 
 ipcMain.handle('save-file', async (event, { content, filePath }) => {
@@ -178,6 +244,15 @@ ipcMain.handle('process-image', async (event, { sourcePath, alt }) => {
 app.whenReady().then(() => {
   if (!fs.existsSync(CONFIG_PATH)) saveConfig(DEFAULT_CONFIG);
   createWindow();
+  mainWindow.webContents.once('did-finish-load', () => {
+    const { lastHugoProject } = loadConfig();
+    if (!lastHugoProject || !fs.existsSync(lastHugoProject)) return;
+    try {
+      sendProjectOpened(lastHugoProject);
+    } catch (error) {
+      console.error('Failed to restore Hugo project:', error);
+    }
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

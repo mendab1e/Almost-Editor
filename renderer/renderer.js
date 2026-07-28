@@ -7,6 +7,12 @@ const toggleBtn = document.getElementById('toggle-preview');
 const filenameEl = document.getElementById('filename');
 const statusEl = document.getElementById('status');
 const themeSelect = document.getElementById('theme-select');
+const openProjectBtn = document.getElementById('open-project');
+const projectNameEl = document.getElementById('project-name');
+const postListEl = document.getElementById('post-list');
+const sidebarEl = document.getElementById('post-sidebar');
+const sidebarResizer = document.getElementById('sidebar-resizer');
+const previewResizer = document.getElementById('preview-resizer');
 const lightboxEl = document.getElementById('preview-lightbox');
 const lightboxImage = document.getElementById('lightbox-image');
 const closeLightboxBtn = document.getElementById('close-lightbox');
@@ -15,6 +21,7 @@ let currentFilePath = null;
 let previewVisible = true;
 let renderDebounce = null;
 let savedConfig = { theme: 'system' };
+let hugoProjectPath = null;
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
 const editor = createMarkdownEditor(editorHost, handleEditorChange);
 
@@ -81,6 +88,73 @@ function updateHeader() {
 function handleEditorChange() {
   updateHeader();
   scheduleRender();
+}
+
+function setupHorizontalResizer(handle, getStartWidth, resize) {
+  handle.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = getStartWidth();
+    document.body.classList.add('is-resizing');
+    handle.setPointerCapture(event.pointerId);
+
+    const move = (moveEvent) => resize(moveEvent.clientX - startX, startWidth);
+    const stop = () => {
+      document.body.classList.remove('is-resizing');
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', stop);
+      handle.removeEventListener('pointercancel', stop);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', stop);
+    handle.addEventListener('pointercancel', stop);
+  });
+}
+
+setupHorizontalResizer(sidebarResizer, () => sidebarEl.getBoundingClientRect().width, (delta, startWidth) => {
+  const maxWidth = Math.min(480, window.innerWidth * 0.45);
+  const width = Math.max(160, Math.min(maxWidth, startWidth + delta));
+  sidebarEl.style.width = `${width}px`;
+  sidebarEl.style.flexBasis = `${width}px`;
+});
+
+setupHorizontalResizer(previewResizer, () => editorHost.getBoundingClientRect().width, (delta, startWidth) => {
+  const usableWidth = panes.getBoundingClientRect().width - previewResizer.getBoundingClientRect().width;
+  const editorWidth = Math.max(240, Math.min(usableWidth - 240, startWidth + delta));
+  editorHost.style.flex = `0 0 ${editorWidth}px`;
+  preview.style.flex = '1 1 0';
+});
+
+function balanceEditorAndPreview() {
+  editorHost.style.flex = '1 1 50%';
+  preview.style.flex = '1 1 50%';
+}
+
+function renderPostList(posts) {
+  postListEl.replaceChildren();
+  if (!posts.length) {
+    const empty = document.createElement('div');
+    empty.className = 'post-list-empty';
+    empty.textContent = 'No post bundles with index.md found.';
+    postListEl.append(empty);
+    return;
+  }
+
+  for (const post of posts) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'post-entry';
+    button.textContent = post.name;
+    button.dataset.postPath = post.relativePath;
+    postListEl.append(button);
+  }
+}
+
+function highlightCurrentPost() {
+  postListEl.querySelectorAll('.post-entry').forEach((button) => {
+    const expectedEnding = `/content/posts/${button.dataset.postPath}/index.md`;
+    button.classList.toggle('active', Boolean(currentFilePath && currentFilePath.endsWith(expectedEnding)));
+  });
 }
 
 function escapeHtml(value) {
@@ -165,6 +239,7 @@ function scheduleRender() {
 toggleBtn.addEventListener('click', () => {
   previewVisible = !previewVisible;
   preview.classList.toggle('hidden', !previewVisible);
+  previewResizer.classList.toggle('hidden', !previewVisible);
   panes.classList.toggle('preview-hidden', !previewVisible);
   toggleBtn.textContent = previewVisible ? 'Hide Preview' : 'Show Preview';
 });
@@ -188,6 +263,24 @@ function closeLightbox() {
 closeLightboxBtn.addEventListener('click', closeLightbox);
 lightboxEl.addEventListener('click', (event) => {
   if (event.target === lightboxEl) closeLightbox();
+});
+
+openProjectBtn.addEventListener('click', async () => {
+  if (!window.api) return;
+  await window.api.openHugoProjectDialog();
+});
+
+postListEl.addEventListener('click', async (event) => {
+  const button = event.target.closest('.post-entry');
+  if (!button || !window.api || !hugoProjectPath) return;
+  // Opening the first selected post starts the writing/preview panes evenly.
+  // Once a post is selected, preserve any split width the user has chosen.
+  if (!postListEl.querySelector('.post-entry.active')) balanceEditorAndPreview();
+  const result = await window.api.openHugoPost({
+    projectPath: hugoProjectPath,
+    relativePath: button.dataset.postPath
+  });
+  if (!result.ok) setStatus(result.error || 'Could not open post', true);
 });
 
 function setStatus(msg, isError) {
@@ -250,7 +343,17 @@ if (window.api) {
     currentFilePath = filePath;
     editor.setValue(content);
     updateHeader();
+    highlightCurrentPost();
     renderPreview();
+  });
+
+  window.api.onProjectOpened(({ projectPath, posts }) => {
+    hugoProjectPath = projectPath;
+    projectNameEl.textContent = projectPath.split('/').pop();
+    projectNameEl.title = projectPath;
+    renderPostList(posts);
+    highlightCurrentPost();
+    setStatus(`${posts.length} Hugo posts loaded`);
   });
 
   window.api.onRequestSave(() => saveCurrent(false));
