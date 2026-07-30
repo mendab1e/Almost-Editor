@@ -30,9 +30,11 @@ const imageResizeInput = document.getElementById('image-resize');
 const imageQualityInput = document.getElementById('image-quality');
 const thumbnailResizeInput = document.getElementById('thumbnail-resize');
 const thumbnailQualityInput = document.getElementById('thumbnail-quality');
+const imageShortcodeTemplateInput = document.getElementById('image-shortcode-template');
 const imageOptionsError = document.getElementById('image-options-error');
 const cancelImageOptionsBtn = document.getElementById('cancel-image-options');
-const resetImageOptionsBtn = document.getElementById('reset-image-options');
+const resetImageSizeBtn = document.getElementById('reset-image-size');
+const resetImageShortcodeBtn = document.getElementById('reset-image-shortcode');
 const lightboxEl = document.getElementById('preview-lightbox');
 const lightboxImage = document.getElementById('lightbox-image');
 const closeLightboxBtn = document.getElementById('close-lightbox');
@@ -49,6 +51,13 @@ const openDocuments = new Map([
 ]);
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
 const editor = createMarkdownEditor(editorHost, handleEditorChange);
+const DEFAULT_IMAGE_OPTIONS = {
+  imageResize: '1500x1500',
+  imageQuality: 70,
+  thumbnailResize: '500x500',
+  thumbnailQuality: 60
+};
+const DEFAULT_IMAGE_SHORTCODE = '{{< lightbox src="{src}" thumb="{thumb}" alt="{alt}" >}}';
 
 function resolvedTheme(choice = savedConfig.theme) {
   return choice === 'system' ? (systemTheme.matches ? 'dark' : 'light') : choice;
@@ -378,10 +387,11 @@ openProjectBtn.addEventListener('click', async () => {
 });
 
 function openImageOptions() {
-  imageResizeInput.value = savedConfig.imageResize || '1500x1500';
-  imageQualityInput.value = savedConfig.imageQuality ?? 70;
-  thumbnailResizeInput.value = savedConfig.thumbnailResize || '500x500';
-  thumbnailQualityInput.value = savedConfig.thumbnailQuality ?? 60;
+  imageResizeInput.value = savedConfig.imageResize || DEFAULT_IMAGE_OPTIONS.imageResize;
+  imageQualityInput.value = savedConfig.imageQuality ?? DEFAULT_IMAGE_OPTIONS.imageQuality;
+  thumbnailResizeInput.value = savedConfig.thumbnailResize || DEFAULT_IMAGE_OPTIONS.thumbnailResize;
+  thumbnailQualityInput.value = savedConfig.thumbnailQuality ?? DEFAULT_IMAGE_OPTIONS.thumbnailQuality;
+  imageShortcodeTemplateInput.value = savedConfig.imageShortcodeTemplate || DEFAULT_IMAGE_SHORTCODE;
   imageOptionsError.textContent = '';
   imageOptionsDialog.classList.remove('hidden');
   imageResizeInput.focus();
@@ -393,11 +403,15 @@ function closeImageOptions() {
 
 imageOptionsBtn.addEventListener('click', openImageOptions);
 cancelImageOptionsBtn.addEventListener('click', closeImageOptions);
-resetImageOptionsBtn.addEventListener('click', () => {
-  imageResizeInput.value = '1500x1500';
-  imageQualityInput.value = '70';
-  thumbnailResizeInput.value = '500x500';
-  thumbnailQualityInput.value = '60';
+resetImageSizeBtn.addEventListener('click', () => {
+  imageResizeInput.value = DEFAULT_IMAGE_OPTIONS.imageResize;
+  imageQualityInput.value = String(DEFAULT_IMAGE_OPTIONS.imageQuality);
+  thumbnailResizeInput.value = DEFAULT_IMAGE_OPTIONS.thumbnailResize;
+  thumbnailQualityInput.value = String(DEFAULT_IMAGE_OPTIONS.thumbnailQuality);
+  imageOptionsError.textContent = '';
+});
+resetImageShortcodeBtn.addEventListener('click', () => {
+  imageShortcodeTemplateInput.value = DEFAULT_IMAGE_SHORTCODE;
   imageOptionsError.textContent = '';
 });
 imageOptionsDialog.addEventListener('click', (event) => {
@@ -409,13 +423,25 @@ imageOptionsForm.addEventListener('submit', async (event) => {
   const thumbnailResize = thumbnailResizeInput.value.trim();
   const imageQuality = Number(imageQualityInput.value);
   const thumbnailQuality = Number(thumbnailQualityInput.value);
+  const imageShortcodeTemplate = imageShortcodeTemplateInput.value.trim();
   if (!/^\d+x\d+$/i.test(imageResize) || !/^\d+x\d+$/i.test(thumbnailResize) ||
       !Number.isInteger(imageQuality) || !Number.isInteger(thumbnailQuality) ||
       imageQuality < 0 || imageQuality > 100 || thumbnailQuality < 0 || thumbnailQuality > 100) {
     imageOptionsError.textContent = 'Use dimensions such as 1500x1500 and quality values from 0 to 100.';
     return;
   }
-  savedConfig = { ...savedConfig, imageResize, imageQuality, thumbnailResize, thumbnailQuality };
+  if (!imageShortcodeTemplate.includes('{src}')) {
+    imageOptionsError.textContent = 'The shortcode template must include the {src} placeholder.';
+    return;
+  }
+  savedConfig = {
+    ...savedConfig,
+    imageResize,
+    imageQuality,
+    thumbnailResize,
+    thumbnailQuality,
+    imageShortcodeTemplate
+  };
   if (window.api) {
     try {
       savedConfig = await window.api.saveConfig(savedConfig);

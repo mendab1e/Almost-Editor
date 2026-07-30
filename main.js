@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const { execFile } = require('child_process');
 const { createHugoFrontMatter, isValidPostName, listHugoPosts } = require('./lib/hugo-project');
-const { buildMogrifyArgs } = require('./lib/image-processing');
+const { buildImageShortcode, buildMogrifyArgs } = require('./lib/image-processing');
 
 app.setName('Almost Editor');
 
@@ -19,6 +19,7 @@ const DEFAULT_CONFIG = {
   imageQuality: 70,
   thumbnailResize: '500x500',
   thumbnailQuality: 60,
+  imageShortcodeTemplate: '{{< lightbox src="{src}" thumb="{thumb}" alt="{alt}" >}}',
   theme: 'system',
   fontSize: 15,
   lastOpenedDirectory: null,
@@ -220,7 +221,7 @@ function mogrifyImage(inputPath, outputDirectory, resize, quality) {
 }
 
 // Process a dropped/pasted image into a full image and thumbnail, then return
-// the Hugo lightbox shortcode to insert at the cursor.
+// the configured image shortcode to insert at the cursor.
 ipcMain.handle('process-image', async (event, { sourcePath }) => {
   if (typeof sourcePath !== 'string' || !sourcePath) {
     return { ok: false, error: 'Could not read the dropped image path.' };
@@ -251,7 +252,13 @@ ipcMain.handle('process-image', async (event, { sourcePath }) => {
     await mogrifyImage(thumbInput, imagesDir, cfg.thumbnailResize, cfg.thumbnailQuality);
     const src = path.posix.join(cfg.imagesSubdir, `${safeName}.jpg`);
     const thumb = path.posix.join(cfg.imagesSubdir, `${safeName}_thumb.jpg`);
-    return { ok: true, tag: `{{< lightbox src="${src}" thumb="${thumb}" alt="" >}}` };
+    return {
+      ok: true,
+      tag: buildImageShortcode(
+        cfg.imageShortcodeTemplate || DEFAULT_CONFIG.imageShortcodeTemplate,
+        { src, thumb, alt: '' }
+      )
+    };
   } catch (error) {
     return { ok: false, error: `ImageMagick mogrify failed: ${error.message}. Is ImageMagick installed? (brew install imagemagick)` };
   } finally {

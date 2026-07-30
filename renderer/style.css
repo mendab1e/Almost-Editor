@@ -170,10 +170,25 @@ body.is-resizing { cursor: col-resize; user-select: none; }
   border-radius: 8px; background: var(--preview-bg); color: var(--text); box-shadow: 0 12px 32px rgba(0, 0, 0, .25);
 }
 .modal-card h2 { margin: 0 0 16px; font-size: 17px; }
+.modal-card h3 { margin: 0; font-size: 13px; }
 .modal-card label { display: block; margin-bottom: 6px; font-size: 13px; }
-.modal-card input { width: 100%; padding: 7px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--app-bg); color: var(--text); }
+.modal-card input, .modal-card textarea {
+  width: 100%; padding: 7px 8px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--app-bg); color: var(--text); font: inherit;
+}
+.modal-card textarea { resize: vertical; font-family: "SF Mono", Menlo, monospace; font-size: 12px; line-height: 1.45; }
+.image-options-card { width: min(520px, 100%); }
+.image-options-section + .image-options-section { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
+.image-options-section-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.image-options-section-header button {
+  flex: 0 0 auto; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--control-bg); color: var(--text); font-size: 11px; cursor: pointer;
+}
+.image-options-section-header button:hover { background: var(--control-hover); }
 .image-options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; align-items: center; }
 .image-options-grid label { margin: 0; }
+.field-help { margin: 7px 0 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.field-help code { font-family: "SF Mono", Menlo, monospace; color: var(--text); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
 .modal-actions button { padding: 5px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--control-bg); color: var(--text); cursor: pointer; }
 .modal-actions button[type="submit"] { color: #fff; background: #2563eb; border-color: #2563eb; }

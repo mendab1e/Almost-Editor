@@ -91,13 +91,25 @@ Drag an image into the editor to create two JPEG files in the current post's `im
 | `images/image_name.jpg` | `1500x1500` | `70` |
 | `images/image_name_thumb.jpg` | `500x500` | `60` |
 
-Almost Editor then inserts:
+Almost Editor then inserts this default shortcode:
 
 ```go
 {{< lightbox src="images/image_name.jpg" thumb="images/image_name_thumb.jpg" alt="" >}}
 ```
 
-Use **Image options** to change the full-size and thumbnail resize dimensions and JPEG quality. These settings are saved and reused for later images; the dialog also includes a reset-to-defaults action.
+Use **Image options** to change the full-size and thumbnail resize dimensions, JPEG quality, and the text inserted after processing an image. The shortcode template supports these placeholders:
+
+- `{src}` — generated full-size image path
+- `{thumb}` — generated thumbnail path
+- `{alt}` — alternative text, initially empty
+
+For example, the default template is:
+
+```go
+{{< lightbox src="{src}" thumb="{thumb}" alt="{alt}" >}}
+```
+
+The template must contain `{src}`; `{thumb}` and `{alt}` are optional, so standard Markdown such as `![{alt}]({src})` also works. All image options are saved and restored when the app reopens. Resize/quality settings and the shortcode template each have their own reset-to-default button.
 
 ## Features
 
@@ -109,7 +121,7 @@ Use **Image options** to change the full-size and thumbnail resize dimensions an
 - Persistent theme, text size, image settings, last file directory, and last Hugo project
 - Project sidebar for Hugo post bundles and in-app post creation
 - Unsaved-change indicators and in-memory drafts while switching posts
-- Image conversion and lightbox macro insertion powered by ImageMagick
+- Image conversion and configurable shortcode insertion powered by ImageMagick
 
 ## Notes
 
