@@ -37,11 +37,11 @@ test('validates page bundle directory names', () => {
 test('creates the expected TOML front matter', () => {
   assert.equal(createHugoFrontMatter('Film scanning', '2026-07-28'), [
     '+++',
-    'author: ""',
-    'title: "Film scanning"',
-    'date: "2026-07-28"',
-    'description: ""',
-    'tags: []',
+    'author = ""',
+    'title = "Film scanning"',
+    'date = "2026-07-28"',
+    'description = ""',
+    'tags = []',
     '+++',
     ''
   ].join('\n'));
