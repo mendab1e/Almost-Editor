@@ -11,7 +11,19 @@ export function titleFromFrontMatter(text) {
 
   const title = match[2].match(/^\s*title\s*(?::|=)\s*(.+?)\s*$/mi);
   if (!title) return '';
-  return title[1].replace(/\s+#.*$/, '').replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, '$1$2').trim();
+  const value = title[1].trim();
+  if (value.startsWith('"')) {
+    const quoted = value.match(/^"((?:\\.|[^"\\])*)"/);
+    if (quoted) {
+      try { return JSON.parse(`"${quoted[1]}"`); }
+      catch { return quoted[1]; }
+    }
+  }
+  if (value.startsWith("'")) {
+    const quoted = value.match(/^'((?:''|[^'])*)'/);
+    if (quoted) return match[1] === '---' ? quoted[1].replace(/''/g, "'") : quoted[1];
+  }
+  return value.replace(/\s+#.*$/, '').trim();
 }
 
 export function expandHugoRefLinks(markdown) {

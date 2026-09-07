@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { pathToFileURL } = require('url');
+const { atomicWrite, readText, readRecovery, validDraft } = require('./lib/file-storage');
 const authorizedFiles = new Map();
 const authorizedProjects = new Set();
 function authorizeFile(filePath) {
@@ -31,7 +32,9 @@ let mainWindow;
 let currentFilePath = null; // path of the .md file currently open
 let allowWindowClose = false;
 let isQuitting = false;
+let closePending = false;
 
+const RECOVERY_PATH = path.join(app.getPath('userData'), 'draft-recovery.json');
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
 const DEFAULT_CONFIG = {
   // Where processed images get saved, relative to the folder the .md file lives in
@@ -61,11 +64,12 @@ function loadConfig() {
 }
 
 function saveConfig(cfg) {
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+  atomicWrite(CONFIG_PATH, JSON.stringify(cfg, null, 2));
 }
 
 function createWindow() {
   allowWindowClose = false;
+  closePending = false;
   authorizedFiles.clear();
   authorizedProjects.clear();
   const windowState = normalizeWindowState(loadConfig().windowState);
@@ -85,6 +89,25 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
+  updateApplicationMenu([]);
+
+  mainWindow.on('close', (event) => {
+    if (allowWindowClose) {
+      persistWindowState();
+      return;
+    }
+    event.preventDefault();
+    closePending = true;
+    mainWindow.webContents.send('request-window-close');
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+    currentFilePath = null;
+  });
+}
+
+function updateApplicationMenu(documents) {
   const menu = Menu.buildFromTemplate([
     ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
     {
@@ -93,6 +116,12 @@ function createWindow() {
         { label: 'New', accelerator: 'CmdOrCtrl+N', click: () => newFile() },
         { label: 'Open…', accelerator: 'CmdOrCtrl+O', click: () => openFile() },
         { label: 'Open Hugo Project…', accelerator: 'CmdOrCtrl+Shift+O', click: () => openHugoProject() },
+        { label: 'Open Documents', id: 'open-documents', submenu: documents.length
+          ? documents.map(document => ({
+            id: `document:${document.key}`, label: document.label, type: 'checkbox', checked: document.active,
+            click: () => { if (!closePending) mainWindow.webContents.send('activate-document', document.key); }
+          }))
+          : [{ label: 'No open documents', enabled: false }] },
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => mainWindow.webContents.send('request-save') },
         { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: () => mainWindow.webContents.send('request-save-as') },
         { type: 'separator' },
@@ -103,20 +132,6 @@ function createWindow() {
     { role: 'windowMenu' }
   ]);
   Menu.setApplicationMenu(menu);
-
-  mainWindow.on('close', (event) => {
-    if (allowWindowClose) {
-      persistWindowState();
-      return;
-    }
-    event.preventDefault();
-    mainWindow.webContents.send('request-window-close');
-  });
-
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-    currentFilePath = null;
-  });
 }
 
 function persistWindowState() {
@@ -134,11 +149,13 @@ function persistWindowState() {
 }
 
 function newFile() {
+  if (closePending) return { ok: false };
   currentFilePath = null;
   mainWindow.webContents.send('file-opened', { filePath: null, content: '', projectPath: null });
 }
 
 function openFile() {
+  if (closePending) return { ok: false };
   const cfg = loadConfig();
   const result = dialog.showOpenDialogSync(mainWindow, {
     properties: ['openFile'],
@@ -164,6 +181,7 @@ function sendProjectOpened(projectPath) {
 }
 
 function openHugoPost(projectPath, relativePath, remember = true) {
+  if (closePending) return { ok: false };
   if (!authorizedProjects.has(projectPath)) return { ok: false, error: 'Open the project first.' };
   const postPath = resolveHugoPostPath(projectPath, relativePath);
   if (!postPath || !fs.existsSync(postPath) || !fs.statSync(postPath).isFile()) {
@@ -189,16 +207,34 @@ function openHugoPost(projectPath, relativePath, remember = true) {
 
 function restoreLastSession() {
   const { lastHugoProject, lastHugoPost } = loadConfig();
-  if (!lastHugoProject || !fs.existsSync(lastHugoProject)) return;
   try {
-    sendProjectOpened(lastHugoProject);
-    if (lastHugoPost) openHugoPost(lastHugoProject, lastHugoPost, false);
+    if (lastHugoProject && fs.existsSync(lastHugoProject)) {
+      sendProjectOpened(lastHugoProject);
+      if (lastHugoPost) openHugoPost(lastHugoProject, lastHugoPost, false);
+    }
   } catch (error) {
     console.error('Failed to restore Hugo project:', error);
+  }
+  try {
+    const snapshot = readRecovery(RECOVERY_PATH);
+    for (const draft of snapshot.documents) {
+      if (draft.filePath) {
+        if (fs.existsSync(draft.filePath)) authorizeFile(draft.filePath);
+        else authorizedFiles.set(draft.filePath, path.resolve(draft.filePath));
+      }
+      if (draft.projectPath && fs.existsSync(path.join(draft.projectPath, 'content', 'posts'))) {
+        authorizedProjects.add(draft.projectPath);
+      }
+    }
+    mainWindow.webContents.send('drafts-recovered', snapshot);
+  } catch (error) {
+    // Keep the unreadable recovery file for manual recovery instead of replacing it.
+    mainWindow.webContents.send('drafts-recovered', { documents: [], error: error.message });
   }
 }
 
 function openHugoProject() {
+  if (closePending) return { ok: false };
   const cfg = loadConfig();
   const result = dialog.showOpenDialogSync(mainWindow, {
     properties: ['openDirectory'],
@@ -263,6 +299,7 @@ handle('open-hugo-post', (event, { projectPath, relativePath }) => (
 ));
 
 handle('create-hugo-post', (event, { projectPath, name }) => {
+  if (closePending) return { ok: false };
   if (!authorizedProjects.has(projectPath) || typeof name !== 'string') return { ok: false, error: 'Invalid project or name.' };
   const postName = name.trim();
   if (!isValidPostName(postName)) {
@@ -304,24 +341,81 @@ handle('create-hugo-post', (event, { projectPath, name }) => {
   }
 });
 
-handle('save-file', async (event, { content, filePath, forcePicker = false, updateCurrentFile = true }) => {
-  if (typeof content !== 'string' || (filePath != null && typeof filePath !== 'string')) return { ok: false, error: 'Invalid file payload.' };
-  let targetPath = forcePicker ? null : filePath || currentFilePath;
-  if (targetPath && !validFile(targetPath)) return { ok: false, error: 'Open the file before saving it.' };
-  if (!targetPath) {
-    const cfg = loadConfig();
-    targetPath = dialog.showSaveDialogSync(mainWindow, {
-      filters: [{ name: 'Markdown', extensions: ['md'] }],
-      defaultPath: cfg.lastOpenedDirectory || undefined
-    });
-    if (!targetPath) return { ok: false };
+handle('update-document-menu', (event, documents) => {
+  if (!Array.isArray(documents) || !documents.every(document => document &&
+      typeof document.key === 'string' && typeof document.label === 'string' &&
+      typeof document.active === 'boolean')) return { ok: false };
+  updateApplicationMenu(documents);
+  return { ok: true };
+});
+
+handle('set-active-file', (event, { filePath, projectPath = null }) => {
+  if (filePath !== null && !authorizedFiles.has(filePath)) return { ok: false };
+  currentFilePath = filePath;
+  if (projectPath && authorizedProjects.has(projectPath)) sendProjectOpened(projectPath);
+  return { ok: true };
+});
+
+handle('save-recovery', (event, snapshot) => {
+  if (!snapshot || !Array.isArray(snapshot.documents) || !snapshot.documents.every(validDraft)) {
+    return { ok: false, error: 'Invalid recovery snapshot.' };
   }
-  fs.writeFileSync(targetPath, content, 'utf8');
-  authorizeFile(targetPath);
-  if (updateCurrentFile) currentFilePath = targetPath;
-  const cfg = loadConfig();
-  saveConfig({ ...cfg, lastOpenedDirectory: path.dirname(targetPath) });
-  return { ok: true, filePath: targetPath };
+  try {
+    atomicWrite(RECOVERY_PATH, JSON.stringify(snapshot));
+    return { ok: true };
+  } catch (error) { return { ok: false, error: error.message }; }
+});
+
+handle('save-file', (event, { content, filePath, expectedContent, forcePicker = false, protectedPaths = [] }) => {
+  if (typeof content !== 'string' || typeof expectedContent !== 'string' ||
+      (filePath !== null && typeof filePath !== 'string') ||
+      !Array.isArray(protectedPaths) || !protectedPaths.every(p => typeof p === 'string')) {
+    return { ok: false, error: 'Invalid file payload.' };
+  }
+  let targetPath = forcePicker ? null : filePath;
+  if (targetPath && !authorizedFiles.has(targetPath)) return { ok: false, error: 'Open the file before saving it.' };
+  try {
+    const chooseCopy = () => dialog.showSaveDialogSync(mainWindow, {
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+      defaultPath: filePath ? path.join(path.dirname(filePath), `${path.basename(filePath, path.extname(filePath))}-copy.md`)
+        : loadConfig().lastOpenedDirectory || undefined
+    });
+    if (!targetPath) targetPath = chooseCopy();
+    if (!targetPath) return { ok: false };
+    const canonical = p => fs.existsSync(p) ? fs.realpathSync(p) : path.resolve(p);
+    const writeTarget = () => {
+      const resolved = canonical(targetPath);
+      if (protectedPaths.some(p => canonical(p) === resolved)) {
+        throw new Error('Another open draft uses this destination. Choose a different filename.');
+      }
+      const isOriginal = filePath && (targetPath === filePath || resolved === authorizedFiles.get(filePath));
+      if (isOriginal && (!validFile(filePath) || readText(resolved) !== expectedContent)) {
+        const error = new Error('The file changed or was deleted on disk.');
+        error.code = 'CONFLICT';
+        throw error;
+      }
+      atomicWrite(resolved, content, { expectedContent: isOriginal ? expectedContent : readText(resolved) });
+      authorizeFile(targetPath);
+    };
+    try { writeTarget(); }
+    catch (error) {
+      if (error.code !== 'CONFLICT') throw error;
+      const response = dialog.showMessageBoxSync(mainWindow, {
+        type: 'warning', buttons: ['Save a Copy…', 'Cancel'], defaultId: 0, cancelId: 1,
+        message: 'This file changed on disk.',
+        detail: 'Your draft has been kept. Save a copy to preserve both versions.'
+      });
+      if (response !== 0) return { ok: false, conflict: true, error: 'Save cancelled; your draft is still unsaved.' };
+      targetPath = chooseCopy();
+      if (!targetPath) return { ok: false };
+      writeTarget();
+    }
+    const cfg = loadConfig();
+    // A preferences write failure must not misreport a successful document save.
+    try { saveConfig({ ...cfg, lastOpenedDirectory: path.dirname(targetPath) }); }
+    catch (error) { console.error('Could not remember save directory:', error); }
+    return { ok: true, filePath: targetPath };
+  } catch (error) { return { ok: false, error: error.message }; }
 });
 
 handle('confirm-window-close', async (event, { dirtyCount }) => {
@@ -344,12 +438,14 @@ handle('confirm-window-close', async (event, { dirtyCount }) => {
   return { action };
 });
 
-handle('finish-window-close', (event, { close }) => {
+handle('finish-window-close', (event, { close, discardRecovery = false }) => {
   if (!mainWindow || event.sender !== mainWindow.webContents) return { ok: false };
   if (!close) {
+    closePending = false;
     isQuitting = false;
     return { ok: true };
   }
+  if (discardRecovery) atomicWrite(RECOVERY_PATH, JSON.stringify({ documents: [], activeKey: null }));
   allowWindowClose = true;
   if (isQuitting) app.quit();
   else mainWindow.close();

@@ -52,3 +52,10 @@ test('builds direct and Hugo article links', () => {
     '[Film scanning]({{< ref "/posts/archive/film-scanning" >}})'
   );
 });
+
+test('formats the first blank line without creating a reversed selection', () => {
+  const edit = formatMarkdownBlock('\nHello', 0, 0, 'h1');
+  assert.equal(edit.from, 0);
+  assert.equal(edit.to, 0);
+  assert.equal(edit.insert, '# Text');
+});

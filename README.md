@@ -38,13 +38,19 @@ npm test
 
 The suite covers Hugo project discovery, generated post front matter, image-processing command construction, collision-safe image names, document insertion state, and Hugo Markdown preprocessing.
 
-Run the Electron regression checks (requires ImageMagick) with `npm run build && node_modules/.bin/electron scripts/verify-electron.cjs`. They use temporary documents and isolated settings.
+Run the Electron regression checks (requires ImageMagick) with `npm run build && node_modules/.bin/electron scripts/verify-electron.cjs`. They use temporary documents and isolated settings. Run `node_modules/.bin/electron scripts/verify-saving.cjs` for save-race, conflict, untitled-draft, recovery, and discard checks.
 
 ## Hugo project workflow
 
 Open the root of a Hugo project with **Open project**. Almost Editor scans `content/posts` for directories containing `index.md` and shows those post bundles in the sidebar.
 
 Select a post to open its `index.md`. The editor keeps unsaved buffers in memory while you move between posts, and marks changed posts with a yellow dot in both the sidebar and bottom status area. Save to write the changes to disk. Closing the window with unsaved buffers prompts you to save all changes, discard them, or cancel closing. When Almost Editor starts again, it restores the last Hugo project and reopens the post that was active when the app closed.
+
+Use **File → New** to start an independent untitled draft. **File → Open Documents** switches between open files and untitled drafts without discarding changes.
+
+Saves use a temporary file in the same directory and then replace the original, so a failed write does not truncate your Markdown file. If the file changed or was deleted outside Almost Editor, saving offers **Save a Copy…** or **Cancel**. Your draft stays in memory, and the external version is preserved. Save As also prevents overwriting another document already open in the editor. Edits made while a save is finishing remain marked unsaved.
+
+Unsaved drafts are also stored separately in `draft-recovery.json` in the app's user-data folder. Recovery snapshots are written roughly every 300 ms during editing and before saves. After an unexpected exit, the app restores these drafts automatically; use **File → Open Documents** to access them. Recovery does not write to your Markdown files. The latest keystrokes can be lost if a crash happens before the next snapshot finishes. Choosing **Don’t Save** when closing explicitly discards the recovery drafts; cancelling close retains them.
 
 Use the formatting toolbar above the editor for headings, bold, italic, strikethrough, inline and fenced code, block quotes, bulleted, numbered, and task lists, links, and horizontal rules. Bold, italic, and link insertion are also available with <kbd>Cmd/Ctrl+B</kbd>, <kbd>Cmd/Ctrl+I</kbd>, and <kbd>Cmd/Ctrl+K</kbd>.
 

@@ -19,3 +19,9 @@ test('converts Hugo ref shortcodes into preview links', () => {
     '[Film scanning](hugo-ref:/posts/film_scanning)'
   );
 });
+
+test('preserves hashes and escaped quotes inside front matter titles', () => {
+  assert.equal(titleFromFrontMatter('+++\ntitle = "A #1 choice" # comment\n+++\n'), 'A #1 choice');
+  assert.equal(titleFromFrontMatter("---\ntitle: 'It''s #1' # comment\n---\n"), "It's #1");
+  assert.equal(titleFromFrontMatter('+++\ntitle = "A \\"quoted\\" title"\n+++\n'), 'A "quoted" title');
+});

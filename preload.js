@@ -2,6 +2,11 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  updateDocumentMenu: (documents) => ipcRenderer.invoke('update-document-menu', documents),
+  onActivateDocument: (callback) => ipcRenderer.on('activate-document', (event, key) => callback(key)),
+  setActiveFile: (payload) => ipcRenderer.invoke('set-active-file', payload),
+  saveRecovery: (snapshot) => ipcRenderer.invoke('save-recovery', snapshot),
+  onDraftsRecovered: (callback) => ipcRenderer.on('drafts-recovered', (event, snapshot) => callback(snapshot)),
   getConfig: () => ipcRenderer.invoke('get-config'),
   saveConfig: (cfg) => ipcRenderer.invoke('save-config', cfg),
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),

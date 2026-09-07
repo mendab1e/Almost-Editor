@@ -36,7 +36,7 @@ app.whenReady().then(async () => {
     const clean = await js(`import('./editor.bundle.js').then(({sanitizePreview}) => sanitizePreview('<img src="missing" onerror="window.compromised=true"><iframe srcdoc="bad"></iframe><a href="javascript:alert(1)">bad</a><a href="hugo-ref:posts/a">good</a>'))`);
     assert(!clean.includes('onerror') && !clean.includes('iframe') && !clean.includes('javascript:'));
     assert(clean.includes('hugo-ref:posts/a'));
-    assert.equal((await js(`window.api.saveFile({filePath:${JSON.stringify(path.join(temporary, 'unauthorized.md'))},content:'bad'})`)).ok, false);
+    assert.equal((await js(`window.api.saveFile({filePath:${JSON.stringify(path.join(temporary, 'unauthorized.md'))},content:'bad',expectedContent:''})`)).ok, false);
     fs.writeFileSync(second, '[external](https://example.com)');
     await open(second);
     const before = window.webContents.getURL();

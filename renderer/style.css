@@ -266,3 +266,5 @@ body.is-resizing { cursor: col-resize; user-select: none; }
   line-height: 1;
 }
 #dirty-status.hidden { display: none; }
+
+#filename { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

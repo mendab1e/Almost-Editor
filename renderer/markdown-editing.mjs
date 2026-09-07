@@ -24,7 +24,7 @@ export function wrapMarkdownSelection(source, from, to, prefix, suffix = prefix,
 
 function selectedLineRange(source, from, to) {
   const range = normalizedRange(source, from, to);
-  const lineFrom = source.lastIndexOf('\n', Math.max(0, range.from - 1)) + 1;
+  const lineFrom = range.from === 0 ? 0 : source.lastIndexOf('\n', range.from - 1) + 1;
   const inclusiveEnd = range.to > range.from && source[range.to - 1] === '\n' ? range.to - 1 : range.to;
   const nextBreak = source.indexOf('\n', inclusiveEnd);
   const lineTo = nextBreak === -1 ? source.length : nextBreak;

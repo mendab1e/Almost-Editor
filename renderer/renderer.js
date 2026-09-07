@@ -6,7 +6,7 @@ import {
   insertMarkdownBlock,
   wrapMarkdownSelection
 } from './markdown-editing.mjs';
-import { dirtyDocumentsForClose } from './document-state.mjs';
+import { dirtyDocumentsForClose, completeDocumentSave, recoverySnapshot } from './document-state.mjs';
 import { expandHugoRefLinks, titleFromFrontMatter, withoutHugoFrontMatter } from './markdown-tools.mjs';
 
 const editorPane = document.getElementById('editor-pane');
@@ -61,7 +61,7 @@ const lightboxImage = document.getElementById('lightbox-image');
 const closeLightboxBtn = document.getElementById('close-lightbox');
 
 let currentFilePath = null;
-let currentDocumentKey = '__untitled__';
+let currentDocumentKey = `draft:${crypto.randomUUID()}`;
 let previewVisible = true;
 let renderDebounce = null;
 let savedConfig = { theme: 'system', fontSize: 15 };
@@ -71,8 +71,71 @@ let hugoPosts = [];
 let pendingLinkSelection = null;
 let windowCloseInProgress = false;
 const openDocuments = new Map([
-  ['__untitled__', { savedContent: '', content: '', dirty: false }]
+  [currentDocumentKey, { savedContent: '', content: '', dirty: false, filePath: null, projectPath: null }]
 ]);
+let documentMenuSignature = '';
+let recoveryReady = false;
+let recoveryTimer;
+let recoveryWrite = Promise.resolve();
+const pendingSaves = new Set();
+const pendingImages = new Set();
+let saveQueue = Promise.resolve();
+
+function updateDocumentMenu() {
+  let untitled = 0;
+  const documents = Array.from(openDocuments, ([key, draft]) => ({
+    key,
+    label: `${draft.filePath || `Untitled ${++untitled}`}${draft.dirty ? ' ●' : ''}`,
+    active: key === currentDocumentKey
+  }));
+  const signature = JSON.stringify(documents);
+  if (!window.api || signature === documentMenuSignature) return;
+  documentMenuSignature = signature;
+  window.api.updateDocumentMenu(documents).catch(error => {
+    documentMenuSignature = '';
+    console.error('Unable to update document menu:', error);
+  });
+}
+
+function flushRecovery() {
+  clearTimeout(recoveryTimer);
+  recoveryTimer = null;
+  if (!recoveryReady) return recoveryWrite;
+  const snapshot = recoverySnapshot(openDocuments, currentDocumentKey);
+  recoveryWrite = recoveryWrite.catch(() => {}).then(async () => {
+    const result = await window.api.saveRecovery(snapshot);
+    if (!result.ok) throw new Error(result.error || 'Recovery could not be saved');
+  });
+  return recoveryWrite;
+}
+
+function scheduleRecovery() {
+  if (!recoveryReady) return;
+  // Bound the recovery window even while typing continuously.
+  if (recoveryTimer) return;
+  recoveryTimer = setTimeout(() => {
+    recoveryTimer = null;
+    flushRecovery().catch(error => setStatus(`Draft recovery failed: ${error.message}`, true));
+  }, 300);
+}
+
+function activateDocument(key) {
+  const draft = openDocuments.get(key);
+  if (!draft) return;
+  currentDocumentKey = key;
+  currentFilePath = draft.filePath;
+  currentProjectPostName = draft.projectPath && draft.filePath ? draft.filePath.split('/').at(-2) : null;
+  if (!draft.projectPath) closeProjectSidebar();
+  else hugoProjectPath = draft.projectPath;
+  window.api.setActiveFile({ filePath: draft.filePath, projectPath: draft.projectPath });
+  editor.setValue(draft.content);
+  updateHeader();
+  updateDirtyStatus();
+  highlightCurrentPost();
+  renderPreview();
+  scheduleRecovery();
+}
+
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
 const editor = createMarkdownEditor(editorHost, handleEditorChange);
 const DEFAULT_IMAGE_OPTIONS = {
@@ -154,6 +217,7 @@ function handleEditorChange() {
   if (document) {
     document.content = editor.getValue();
     document.dirty = document.content !== document.savedContent;
+    scheduleRecovery();
     updateDirtyStatus();
   }
   updateHeader();
@@ -161,13 +225,14 @@ function handleEditorChange() {
 }
 
 function documentKey(filePath) {
-  return filePath || '__untitled__';
+  return filePath || `draft:${crypto.randomUUID()}`;
 }
 
 function updateDirtyStatus() {
   const document = openDocuments.get(currentDocumentKey);
   dirtyStatusEl.classList.toggle('hidden', !document?.dirty);
   updatePostDirtyIndicators();
+  updateDocumentMenu();
 }
 
 function updatePostDirtyIndicators() {
@@ -182,12 +247,17 @@ function openDocument(filePath, diskContent) {
   let document = openDocuments.get(key);
   // A dirty buffer is the user's in-memory draft. Prefer it over a fresh read
   // from disk when returning to a sidebar post; clean documents can refresh.
-  if (!document || !document.dirty) {
-    document = { savedContent: diskContent, content: diskContent, dirty: false };
+  if (!document) {
+    document = { savedContent: diskContent, content: diskContent, dirty: false, filePath, projectPath: hugoProjectPath };
     openDocuments.set(key, document);
+  } else if (!document.dirty) {
+    document.savedContent = diskContent;
+    document.content = diskContent;
+    document.projectPath = hugoProjectPath;
   }
   currentDocumentKey = key;
   editor.setValue(document.content);
+  scheduleRecovery();
   updateDirtyStatus();
 }
 
@@ -682,7 +752,15 @@ function insertAtCursor(text) {
   editor.insertAtCursor(text);
 }
 
-async function handleImageFile(filePath) {
+function handleImageFile(filePath) {
+  if (windowCloseInProgress) return Promise.resolve();
+  const operation = insertImageFile(filePath);
+  pendingImages.add(operation);
+  operation.finally(() => pendingImages.delete(operation));
+  return operation;
+}
+
+async function insertImageFile(filePath) {
   if (!window.api) {
     setStatus('Image processing is unavailable because the Electron API did not load', true);
     return;
@@ -711,6 +789,7 @@ async function handleImageFile(filePath) {
     origin.dirty = origin.content !== origin.savedContent;
     updateDirtyStatus();
   }
+  scheduleRecovery();
   setStatus('Image inserted');
   renderPreview();
 }
@@ -744,6 +823,28 @@ editor.onPaste((e) => {
 
 // --- File open/save wiring ---
 if (window.api) {
+  window.api.onActivateDocument((key) => {
+    if (!windowCloseInProgress) activateDocument(key);
+  });
+  window.api.onDraftsRecovered((snapshot) => {
+    if (snapshot.error) {
+      setStatus(`Draft recovery could not be read: ${snapshot.error}`, true);
+      window.alert('The recovery file could not be read. It has been preserved in the app data folder.');
+      return;
+    }
+    for (const draft of snapshot.documents) {
+      openDocuments.set(draft.key, { ...draft, dirty: draft.content !== draft.savedContent });
+    }
+    recoveryReady = true;
+    if (snapshot.documents.length) {
+      const key = snapshot.documents.some(draft => draft.key === snapshot.activeKey)
+        ? snapshot.activeKey : snapshot.documents[0].key;
+      activateDocument(key);
+      setStatus(`${snapshot.documents.length} unsaved drafts recovered`);
+    }
+    updateDocumentMenu();
+  });
+
   window.api.onFileOpened(({ filePath, content, projectPath }) => {
     currentFilePath = filePath;
     if (projectPath) {
@@ -779,78 +880,96 @@ if (window.api) {
   setStatus('File actions unavailable: Electron preload API did not load', true);
 }
 
-async function saveCurrent(forcePicker) {
-  if (!window.api) {
-    setStatus('Saving is unavailable because the Electron API did not load', true);
-    return;
-  }
-  const content = editor.getValue();
-  const previousKey = currentDocumentKey;
-  const result = await window.api.saveFile({
-    content,
-    filePath: currentFilePath,
-    forcePicker
-  });
-  if (result.ok) {
-    currentFilePath = result.filePath;
-    currentDocumentKey = documentKey(currentFilePath);
-    if (previousKey !== currentDocumentKey) openDocuments.delete(previousKey);
-    openDocuments.set(currentDocumentKey, { savedContent: content, content, dirty: false });
+function queueDocumentSave(document, forcePicker) {
+  // Serialize saves so an older response cannot overwrite a newer saved baseline.
+  const operation = saveQueue.catch(() => {}).then(async () => {
+    const content = document.content;
+    const expectedContent = document.savedContent;
+    // Persist the draft before invoking a dialog or touching its Markdown file.
+    await flushRecovery();
+    const protectedPaths = Array.from(openDocuments.values())
+      .filter(draft => draft !== document && draft.filePath)
+      .map(draft => draft.filePath);
+    const result = await window.api.saveFile({ content, expectedContent,
+      filePath: document.filePath, forcePicker, protectedPaths });
+    if (!result.ok) {
+      if (result.error) setStatus(result.error, true);
+      return false;
+    }
+    const activeDocument = openDocuments.get(currentDocumentKey);
+    const previousPath = document.filePath;
+    const moved = completeDocumentSave(openDocuments, document, content, result.filePath);
+    if (previousPath !== result.filePath) document.projectPath = null;
+    if (moved && activeDocument === document) {
+      currentDocumentKey = moved.key;
+      currentFilePath = result.filePath;
+      window.api.setActiveFile({ filePath: result.filePath });
+      if (!document.projectPath) { currentProjectPostName = null; closeProjectSidebar(); }
+      updateHeader();
+      renderPreview();
+    }
     updateDirtyStatus();
-    updateHeader();
-    setStatus('Saved');
-    renderPreview(); // Resolve shortcode image paths once this post has a folder.
-  } else if (result.error) {
-    setStatus(result.error, true);
-  }
+    await flushRecovery();
+    setStatus(document.dirty ? 'Saved; newer edits are still unsaved' : 'Saved');
+    return !document.dirty;
+  }).catch(error => {
+    setStatus(`Save failed: ${error.message}`, true);
+    return false;
+  });
+  saveQueue = operation;
+  pendingSaves.add(operation);
+  operation.finally(() => pendingSaves.delete(operation));
+  return operation;
+}
+
+function saveCurrent(forcePicker) {
+  if (!window.api || windowCloseInProgress) return Promise.resolve(false);
+  return queueDocumentSave(openDocuments.get(currentDocumentKey), forcePicker);
 }
 
 async function saveDirtyDocumentsForClose(dirtyDocuments) {
-  for (const [key, document] of dirtyDocuments) {
-    const isCurrent = key === currentDocumentKey;
-    const result = await window.api.saveFile({
-      content: document.content,
-      filePath: key === '__untitled__' ? null : key,
-      forcePicker: key === '__untitled__',
-      updateCurrentFile: isCurrent
-    });
-    if (!result.ok) return false;
-
-    const savedDocument = { ...document, savedContent: document.content, dirty: false };
-    if (result.filePath !== key) openDocuments.delete(key);
-    openDocuments.set(result.filePath, savedDocument);
-    if (isCurrent) {
-      currentFilePath = result.filePath;
-      currentDocumentKey = result.filePath;
-    }
+  for (const [, document] of dirtyDocuments) {
+    if (!(await queueDocumentSave(document, !document.filePath))) return false;
   }
-  updateDirtyStatus();
-  updateHeader();
-  return true;
+  return !dirtyDocumentsForClose(openDocuments, currentDocumentKey).length;
 }
 
 async function handleWindowCloseRequest() {
   if (windowCloseInProgress) return;
   windowCloseInProgress = true;
+  workspaceEl.inert = true;
+  document.getElementById('toolbar').inert = true;
+  document.activeElement?.blur();
   try {
+    await Promise.all([...pendingSaves, ...pendingImages]);
     const dirtyDocuments = dirtyDocumentsForClose(openDocuments, currentDocumentKey);
     if (!dirtyDocuments.length) {
+      await flushRecovery();
+      recoveryReady = false;
       await window.api.finishWindowClose({ close: true });
       return;
     }
 
     const { action } = await window.api.confirmWindowClose({ dirtyCount: dirtyDocuments.length });
-    if (action === 'cancel') return;
+    if (action === 'cancel') {
+      await window.api.finishWindowClose({ close: false });
+      return;
+    }
     if (action === 'save' && !(await saveDirtyDocumentsForClose(dirtyDocuments))) {
       await window.api.finishWindowClose({ close: false });
       return;
     }
-    await window.api.finishWindowClose({ close: true });
+    await flushRecovery();
+    recoveryReady = false;
+    await window.api.finishWindowClose({ close: true, discardRecovery: action === 'discard' });
   } catch (error) {
+    recoveryReady = true;
     console.error('Unable to finish closing the window:', error);
     setStatus('The window could not be closed', true);
     await window.api.finishWindowClose({ close: false });
   } finally {
+    workspaceEl.inert = false;
+    document.getElementById('toolbar').inert = false;
     windowCloseInProgress = false;
   }
 }
@@ -860,6 +979,7 @@ async function handleWindowCloseRequest() {
 initializeTheme();
 balanceEditorAndPreview();
 renderPreview();
+updateDocumentMenu();
 
 // Cmd+S shortcut inside the editor itself too
 document.addEventListener('keydown', (e) => {
