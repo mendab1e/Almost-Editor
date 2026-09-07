@@ -35,3 +35,21 @@ test('supports templates that omit optional image placeholders', () => {
     '![Scan](images/scan.jpg)'
   );
 });
+
+test('reserves unique image pairs without overwriting existing thumbnails or GIFs', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const { reserveImagePaths } = require('../lib/image-processing');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'image-reservation-'));
+  try {
+    fs.writeFileSync(path.join(directory, 'photo_thumb.jpg'), 'original');
+    const first = reserveImagePaths(directory, 'photo', false);
+    const second = reserveImagePaths(directory, 'photo', false);
+    assert.deepEqual(first.map(p => path.basename(p)), ['photo-1.jpg', 'photo-1_thumb.jpg']);
+    assert.deepEqual(second.map(p => path.basename(p)), ['photo-2.jpg', 'photo-2_thumb.jpg']);
+    assert.equal(fs.readFileSync(path.join(directory, 'photo_thumb.jpg'), 'utf8'), 'original');
+    assert.equal(fs.existsSync(path.join(directory, 'photo.jpg')), false);
+    assert.notEqual(reserveImagePaths(directory, 'photo', true)[0], reserveImagePaths(directory, 'photo', true)[0]);
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});

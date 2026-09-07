@@ -1,4 +1,5 @@
-import { createMarkdownEditor } from './editor.bundle.js';
+import { imageInsertion } from './document-state.mjs';
+import { createMarkdownEditor, sanitizePreview } from './editor.bundle.js';
 import {
   buildMarkdownLink,
   formatMarkdownBlock,
@@ -325,7 +326,7 @@ function renderPreview() {
     // Hugo removes front matter before rendering a page. Do the same for the
     // editor preview, then render with Marked's browser bundle.
     const markdown = expandHugoRefLinks(withoutHugoFrontMatter(editor.getValue()));
-    preview.innerHTML = expandLightboxShortcodes(markdown);
+    preview.innerHTML = sanitizePreview(expandLightboxShortcodes(markdown));
   } catch (error) {
     console.error('Unable to render Markdown preview:', error);
     preview.textContent = `Preview error: ${error.message}`;
@@ -387,7 +388,19 @@ preview.addEventListener('click', (event) => {
     return;
   }
   const link = event.target.closest('a[data-editor-lightbox]');
-  if (!link) return;
+  if (!link) {
+    const ordinaryLink = event.target.closest('a[href]');
+    if (ordinaryLink) {
+      event.preventDefault();
+      const href = ordinaryLink.getAttribute('href');
+      if (href.startsWith('#')) {
+        document.getElementById(href.slice(1))?.scrollIntoView();
+      } else {
+        window.api?.openExternal(href);
+      }
+    }
+    return;
+  }
   event.preventDefault();
   const image = link.querySelector('img');
   lightboxImage.src = link.href;
@@ -674,14 +687,30 @@ async function handleImageFile(filePath) {
     setStatus('Image processing is unavailable because the Electron API did not load', true);
     return;
   }
+  const originKey = currentDocumentKey;
+  const originalContent = editor.getValue();
+  const position = editor.getSelection().from;
   setStatus('Inserting image…');
-  const result = await window.api.processImage({ sourcePath: filePath });
+  const result = await window.api.processImage({ sourcePath: filePath })
+    .catch((error) => ({ ok: false, error: error.message || 'Image processing failed' }));
   if (!result.ok) {
     setStatus(result.error, true);
     window.alert(result.error);
     return;
   }
-  insertAtCursor('\n' + result.tag + '\n');
+  const origin = openDocuments.get(originKey);
+  if (!origin) {
+    setStatus('Image saved in the original post; insertion cancelled because the document moved', true);
+    return;
+  }
+  const edit = imageInsertion(origin.content, originalContent, position, result.tag);
+  if (currentDocumentKey === originKey) {
+    editor.replaceRange(edit.from, edit.from, edit.insert);
+  } else {
+    origin.content = origin.content.slice(0, edit.from) + edit.insert + origin.content.slice(edit.from);
+    origin.dirty = origin.content !== origin.savedContent;
+    updateDirtyStatus();
+  }
   setStatus('Image inserted');
   renderPreview();
 }
@@ -771,6 +800,8 @@ async function saveCurrent(forcePicker) {
     updateHeader();
     setStatus('Saved');
     renderPreview(); // Resolve shortcode image paths once this post has a folder.
+  } else if (result.error) {
+    setStatus(result.error, true);
   }
 }
 

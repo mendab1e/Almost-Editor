@@ -19,3 +19,9 @@ test('returns an empty list when no documents are dirty', () => {
   const documents = new Map([['__untitled__', { dirty: false }]]);
   assert.deepEqual(dirtyDocumentsForClose(documents, '__untitled__'), []);
 });
+
+import { imageInsertion } from '../renderer/document-state.mjs';
+test('image insertion preserves its original position or appends after intervening edits', () => {
+  assert.deepEqual(imageInsertion('abc', 'abc', 1, 'tag'), { from: 1, insert: '\ntag\n' });
+  assert.equal(imageInsertion('changed draft', 'abc', 1, 'tag').from, 13);
+});

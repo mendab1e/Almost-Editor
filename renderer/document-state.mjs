@@ -7,3 +7,8 @@ export function dirtyDocumentsForClose(openDocuments, currentDocumentKey) {
       return 0;
     });
 }
+
+// If the draft changed during conversion, append rather than using a stale offset.
+export function imageInsertion(content, originalContent, position, tag) {
+  return { from: content === originalContent ? position : content.length, insert: `\n${tag}\n` };
+}

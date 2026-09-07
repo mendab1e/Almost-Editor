@@ -1,3 +1,4 @@
+export { sanitizePreview } from './preview-security.js';
 import { history, historyKeymap, defaultKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { syntaxHighlighting, HighlightStyle } from '@codemirror/language';
@@ -81,38 +82,33 @@ const shortcodeTheme = EditorView.baseTheme({
 export function createMarkdownEditor(parent, onChange) {
   const theme = new Compartment();
   const fontSize = new Compartment();
-  let ignoreChange = false;
-  const view = new EditorView({
-    state: EditorState.create({
-      doc: '',
-      extensions: [
-        history(),
-        lineNumbers(),
-        markdown(),
-        hugoShortcodeHighlighting,
-        shortcodeTheme,
-        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
-        EditorView.lineWrapping,
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged && !ignoreChange) onChange(update.state.doc.toString());
-        }),
-        theme.of(lightTheme),
-        fontSize.of(editorTypography(15))
-      ]
-    }),
-    parent
+  let currentTheme = 'light';
+  let currentFontSize = 15;
+  const createState = (doc) => EditorState.create({
+    doc,
+    extensions: [
+      history(),
+      lineNumbers(),
+      markdown(),
+      hugoShortcodeHighlighting,
+      shortcodeTheme,
+      keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+      EditorView.lineWrapping,
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged) onChange(update.state.doc.toString());
+      }),
+      theme.of(currentTheme === 'dark' ? oneDark : lightTheme),
+      fontSize.of(editorTypography(currentFontSize))
+    ]
   });
+  const view = new EditorView({ state: createState(''), parent });
 
   function getValue() {
     return view.state.doc.toString();
   }
 
   function setValue(value) {
-    const current = getValue();
-    if (current === value) return;
-    ignoreChange = true;
-    view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
-    ignoreChange = false;
+    view.setState(createState(value));
   }
 
   return {
@@ -123,10 +119,14 @@ export function createMarkdownEditor(parent, onChange) {
       return { from: range.from, to: range.to, text: view.state.sliceDoc(range.from, range.to) };
     },
     focus: () => view.focus(),
-    setTheme: (mode) => view.dispatch({
-      effects: theme.reconfigure(mode === 'dark' ? oneDark : lightTheme)
-    }),
-    setFontSize: (size) => view.dispatch({ effects: fontSize.reconfigure(editorTypography(size)) }),
+    setTheme(mode) {
+      currentTheme = mode;
+      view.dispatch({ effects: theme.reconfigure(mode === 'dark' ? oneDark : lightTheme) });
+    },
+    setFontSize(size) {
+      currentFontSize = size;
+      view.dispatch({ effects: fontSize.reconfigure(editorTypography(size)) });
+    },
     insertAtCursor(text) {
       const range = view.state.selection.main;
       view.dispatch({

@@ -36,7 +36,9 @@ Run the focused unit/spec suite with:
 npm test
 ```
 
-The suite covers Hugo project discovery, generated post front matter, image-processing command construction, and Hugo Markdown preprocessing.
+The suite covers Hugo project discovery, generated post front matter, image-processing command construction, collision-safe image names, document insertion state, and Hugo Markdown preprocessing.
+
+Run the Electron regression checks (requires ImageMagick) with `npm run build && node_modules/.bin/electron scripts/verify-electron.cjs`. They use temporary documents and isolated settings.
 
 ## Hugo project workflow
 
@@ -84,7 +86,7 @@ The preview also understands Hugo references in Markdown links, for example:
 [Film scanning]({{< ref "/posts/film_scanning" >}})
 ```
 
-Clicking a previewed reference opens the target post in the project sidebar.
+Clicking a previewed reference opens the target post in the project sidebar. Ordinary HTTP and HTTPS links open in your default browser. Preview HTML is sanitized; scripts, embedded frames, and event handlers are removed.
 
 ## Image workflow
 
@@ -94,6 +96,8 @@ Drag an image into the editor to create two JPEG files in the current post's `im
 | --- | --- | --- |
 | `images/image_name.jpg` | `1500x1500` | `70` |
 | `images/image_name_thumb.jpg` | `500x500` | `60` |
+
+Image imports choose an unused filename (for example, `image_name-1.jpg`) when a name is already taken. If you switch posts during conversion, the shortcode is added to the originating draft. If that draft changed during conversion, the shortcode is appended to avoid inserting at an outdated cursor position.
 
 GIF files are copied into `images/` unchanged so animation is preserved. Their inserted shortcode uses the same GIF path for both `{src}` and `{thumb}`.
 

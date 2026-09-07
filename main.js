@@ -1,7 +1,20 @@
-const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { pathToFileURL } = require('url');
+const authorizedFiles = new Map();
+const authorizedProjects = new Set();
+function authorizeFile(filePath) {
+  authorizedFiles.set(filePath, fs.realpathSync(filePath));
+}
+function validFile(filePath) {
+  try {
+    return authorizedFiles.has(filePath) && fs.realpathSync(filePath) === authorizedFiles.get(filePath);
+  } catch {
+    return false;
+  }
+}
 const { execFile } = require('child_process');
 const {
   createHugoFrontMatter,
@@ -9,7 +22,7 @@ const {
   listHugoPosts,
   resolveHugoPostPath
 } = require('./lib/hugo-project');
-const { buildImageShortcode, buildMogrifyArgs, isGifPath } = require('./lib/image-processing');
+const { buildImageShortcode, buildMogrifyArgs, isGifPath, reserveImagePaths } = require('./lib/image-processing');
 const { normalizeWindowState } = require('./lib/window-state');
 
 app.setName('Almost Editor');
@@ -53,6 +66,8 @@ function saveConfig(cfg) {
 
 function createWindow() {
   allowWindowClose = false;
+  authorizedFiles.clear();
+  authorizedProjects.clear();
   const windowState = normalizeWindowState(loadConfig().windowState);
   mainWindow = new BrowserWindow({
     width: windowState.width,
@@ -66,6 +81,8 @@ function createWindow() {
 
   if (windowState.isMaximized) mainWindow.maximize();
   mainWindow.webContents.once('did-finish-load', restoreLastSession);
+  mainWindow.webContents.on('will-navigate', (event) => event.preventDefault());
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   const menu = Menu.buildFromTemplate([
@@ -133,6 +150,7 @@ function openFile() {
   if (!result || !result[0]) return;
   const filePath = result[0];
   const content = fs.readFileSync(filePath, 'utf8');
+  authorizeFile(filePath);
   currentFilePath = filePath;
   saveConfig({ ...cfg, lastOpenedDirectory: path.dirname(filePath) });
   mainWindow.webContents.send('file-opened', { filePath, content, projectPath: null });
@@ -140,16 +158,21 @@ function openFile() {
 
 function sendProjectOpened(projectPath) {
   const posts = listHugoPosts(projectPath);
+  authorizedProjects.add(projectPath);
   mainWindow.webContents.send('project-opened', { projectPath, posts });
   return { ok: true, projectPath, posts };
 }
 
 function openHugoPost(projectPath, relativePath, remember = true) {
+  if (!authorizedProjects.has(projectPath)) return { ok: false, error: 'Open the project first.' };
   const postPath = resolveHugoPostPath(projectPath, relativePath);
   if (!postPath || !fs.existsSync(postPath) || !fs.statSync(postPath).isFile()) {
     return { ok: false, error: 'The selected post could not be found.' };
   }
+  const root = fs.realpathSync(path.join(projectPath, 'content', 'posts'));
+  if (!fs.realpathSync(postPath).startsWith(root + path.sep)) return { ok: false, error: 'Post is outside content/posts.' };
   const content = fs.readFileSync(postPath, 'utf8');
+  authorizeFile(postPath);
   currentFilePath = postPath;
   if (remember) {
     const cfg = loadConfig();
@@ -199,28 +222,49 @@ function openHugoProject() {
 }
 
 // --- IPC handlers ---
+function handle(channel, callback) {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!mainWindow || event.sender !== mainWindow.webContents ||
+        event.senderFrame !== mainWindow.webContents.mainFrame ||
+        event.senderFrame.url !== pathToFileURL(path.join(__dirname, 'renderer', 'index.html')).href) {
+      throw new Error('Untrusted IPC sender');
+    }
+    return callback(event, ...args);
+  });
+}
 
-ipcMain.handle('get-config', () => loadConfig());
+handle('open-external', async (event, url) => {
+  if (typeof url !== 'string') return { ok: false };
+  try {
+    const parsed = new URL(url);
+    if (!['https:', 'http:'].includes(parsed.protocol)) return { ok: false };
+    await shell.openExternal(parsed.href);
+    return { ok: true };
+  } catch { return { ok: false }; }
+});
 
-ipcMain.handle('save-config', (event, cfg) => {
+handle('get-config', () => loadConfig());
+
+handle('save-config', (event, cfg) => {
   if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return loadConfig();
   saveConfig({ ...loadConfig(), ...cfg });
   return loadConfig();
 });
 
-ipcMain.handle('open-file-dialog', () => {
+handle('open-file-dialog', () => {
   openFile();
   return null;
 });
 
-ipcMain.handle('open-hugo-project-dialog', () => openHugoProject());
+handle('open-hugo-project-dialog', () => openHugoProject());
 
-ipcMain.handle('open-hugo-post', (event, { projectPath, relativePath }) => (
+handle('open-hugo-post', (event, { projectPath, relativePath }) => (
   openHugoPost(projectPath, relativePath)
 ));
 
-ipcMain.handle('create-hugo-post', (event, { projectPath, name }) => {
-  const postName = String(name || '').trim();
+handle('create-hugo-post', (event, { projectPath, name }) => {
+  if (!authorizedProjects.has(projectPath) || typeof name !== 'string') return { ok: false, error: 'Invalid project or name.' };
+  const postName = name.trim();
   if (!isValidPostName(postName)) {
     return { ok: false, error: 'Enter a valid post directory name without path separators.' };
   }
@@ -243,6 +287,7 @@ ipcMain.handle('create-hugo-post', (event, { projectPath, name }) => {
     fs.mkdirSync(path.join(postDirectory, 'images'), { recursive: true });
     const indexPath = path.join(postDirectory, 'index.md');
     fs.writeFileSync(indexPath, frontMatter, 'utf8');
+    authorizeFile(indexPath);
     currentFilePath = indexPath;
     const cfg = loadConfig();
     saveConfig({
@@ -259,8 +304,10 @@ ipcMain.handle('create-hugo-post', (event, { projectPath, name }) => {
   }
 });
 
-ipcMain.handle('save-file', async (event, { content, filePath, forcePicker = false, updateCurrentFile = true }) => {
+handle('save-file', async (event, { content, filePath, forcePicker = false, updateCurrentFile = true }) => {
+  if (typeof content !== 'string' || (filePath != null && typeof filePath !== 'string')) return { ok: false, error: 'Invalid file payload.' };
   let targetPath = forcePicker ? null : filePath || currentFilePath;
+  if (targetPath && !validFile(targetPath)) return { ok: false, error: 'Open the file before saving it.' };
   if (!targetPath) {
     const cfg = loadConfig();
     targetPath = dialog.showSaveDialogSync(mainWindow, {
@@ -270,13 +317,14 @@ ipcMain.handle('save-file', async (event, { content, filePath, forcePicker = fal
     if (!targetPath) return { ok: false };
   }
   fs.writeFileSync(targetPath, content, 'utf8');
+  authorizeFile(targetPath);
   if (updateCurrentFile) currentFilePath = targetPath;
   const cfg = loadConfig();
   saveConfig({ ...cfg, lastOpenedDirectory: path.dirname(targetPath) });
   return { ok: true, filePath: targetPath };
 });
 
-ipcMain.handle('confirm-window-close', async (event, { dirtyCount }) => {
+handle('confirm-window-close', async (event, { dirtyCount }) => {
   if (!mainWindow || event.sender !== mainWindow.webContents) return { action: 'cancel' };
   const count = Number.isInteger(dirtyCount) && dirtyCount > 0 ? dirtyCount : 1;
   const saveLabel = count === 1 ? 'Save' : 'Save All';
@@ -296,7 +344,7 @@ ipcMain.handle('confirm-window-close', async (event, { dirtyCount }) => {
   return { action };
 });
 
-ipcMain.handle('finish-window-close', (event, { close }) => {
+handle('finish-window-close', (event, { close }) => {
   if (!mainWindow || event.sender !== mainWindow.webContents) return { ok: false };
   if (!close) {
     isQuitting = false;
@@ -323,27 +371,30 @@ function mogrifyImage(inputPath, outputDirectory, resize, quality) {
 
 // Process a dropped/pasted image into a full image and thumbnail, then return
 // the configured image shortcode to insert at the cursor.
-ipcMain.handle('process-image', async (event, { sourcePath }) => {
+handle('process-image', async (event, { sourcePath }) => {
   if (typeof sourcePath !== 'string' || !sourcePath) {
     return { ok: false, error: 'Could not read the dropped image path.' };
   }
   const cfg = loadConfig();
 
-  if (!currentFilePath) {
+  if (!currentFilePath || !validFile(currentFilePath)) {
     return { ok: false, error: 'Save your Markdown file first, so images have a folder to live next to.' };
   }
 
   const postDir = path.dirname(currentFilePath);
+  if (typeof cfg.imagesSubdir !== 'string' || path.isAbsolute(cfg.imagesSubdir) || cfg.imagesSubdir.split(/[\\/]/).includes('..')) return { ok: false, error: 'Invalid image directory.' };
   const imagesDir = path.join(postDir, cfg.imagesSubdir);
   if (!fs.existsSync(imagesDir)) fs.mkdirSync(imagesDir, { recursive: true });
+
+  if (!fs.realpathSync(imagesDir).startsWith(fs.realpathSync(postDir) + path.sep)) return { ok: false, error: 'Image directory must be inside the post.' };
 
   const baseName = path.basename(sourcePath, path.extname(sourcePath));
   const safeName = baseName.replace(/[^a-z0-9-_]/gi, '-').toLowerCase();
   const extension = path.extname(sourcePath) || '.image';
 
   if (isGifPath(sourcePath)) {
-    const gifName = `${safeName}.gif`;
-    const destinationPath = path.join(imagesDir, gifName);
+    const [destinationPath] = reserveImagePaths(imagesDir, safeName, true);
+    const gifName = path.basename(destinationPath);
     try {
       if (path.resolve(sourcePath) !== path.resolve(destinationPath)) {
         fs.copyFileSync(sourcePath, destinationPath);
@@ -357,6 +408,7 @@ ipcMain.handle('process-image', async (event, { sourcePath }) => {
         )
       };
     } catch (error) {
+      fs.rmSync(destinationPath, { force: true });
       return { ok: false, error: `GIF could not be copied: ${error.message}` };
     }
   }
@@ -365,15 +417,23 @@ ipcMain.handle('process-image', async (event, { sourcePath }) => {
   const fullInput = path.join(tempDirectory, `${safeName}${extension}`);
   const thumbInput = path.join(tempDirectory, `${safeName}_thumb${extension}`);
 
+  let outputs = [];
+  let completed = false;
   try {
     // mogrify uses its input filename for the output filename. Stage two copies
     // with the desired names so it produces image.jpg and image_thumb.jpg.
     fs.copyFileSync(sourcePath, fullInput);
     fs.copyFileSync(sourcePath, thumbInput);
-    await mogrifyImage(fullInput, imagesDir, cfg.imageResize, cfg.imageQuality);
-    await mogrifyImage(thumbInput, imagesDir, cfg.thumbnailResize, cfg.thumbnailQuality);
-    const src = path.posix.join(cfg.imagesSubdir, `${safeName}.jpg`);
-    const thumb = path.posix.join(cfg.imagesSubdir, `${safeName}_thumb.jpg`);
+    const convertedDir = path.join(tempDirectory, 'converted');
+    fs.mkdirSync(convertedDir);
+    await mogrifyImage(fullInput, convertedDir, cfg.imageResize, cfg.imageQuality);
+    await mogrifyImage(thumbInput, convertedDir, cfg.thumbnailResize, cfg.thumbnailQuality);
+    outputs = reserveImagePaths(imagesDir, safeName, false);
+    fs.copyFileSync(path.join(convertedDir, `${safeName}.jpg`), outputs[0]);
+    fs.copyFileSync(path.join(convertedDir, `${safeName}_thumb.jpg`), outputs[1]);
+    completed = true;
+    const src = path.posix.join(cfg.imagesSubdir, path.basename(outputs[0]));
+    const thumb = path.posix.join(cfg.imagesSubdir, path.basename(outputs[1]));
     return {
       ok: true,
       tag: buildImageShortcode(
@@ -384,6 +444,7 @@ ipcMain.handle('process-image', async (event, { sourcePath }) => {
   } catch (error) {
     return { ok: false, error: `ImageMagick mogrify failed: ${error.message}. Is ImageMagick installed? (brew install imagemagick)` };
   } finally {
+    if (!completed) outputs.forEach((output) => fs.rmSync(output, { force: true }));
     fs.rmSync(tempDirectory, { recursive: true, force: true });
   }
 });
