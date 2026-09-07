@@ -44,6 +44,10 @@ Open the root of a Hugo project with **Open project**. Almost Editor scans `cont
 
 Select a post to open its `index.md`. The editor keeps unsaved buffers in memory while you move between posts, and marks changed posts with a yellow dot in both the sidebar and bottom status area. Save to write the changes to disk.
 
+Use the formatting toolbar above the editor for headings, bold, italic, strikethrough, inline and fenced code, block quotes, bulleted, numbered, and task lists, links, and horizontal rules. Bold, italic, and link insertion are also available with <kbd>Cmd/Ctrl+B</kbd>, <kbd>Cmd/Ctrl+I</kbd>, and <kbd>Cmd/Ctrl+K</kbd>.
+
+To link text, select it and choose the link button. Enter a URL directly, or choose **Blog article** and select a page bundle from the current Hugo project. Article links are inserted with Hugo's `ref` convention, for example `[Film scanning]({{< ref "/posts/film_scanning" >}})`.
+
 Use **New post** to create a new page bundle. It prompts for the bundle name and creates:
 
 ```text
@@ -114,6 +118,7 @@ The template must contain `{src}`; `{thumb}` and `{alt}` are optional, so standa
 ## Features
 
 - Markdown syntax highlighting, Hugo shortcode highlighting, line numbers, and configurable editor text size (9–20px)
+- Markdown formatting toolbar with standard text, list, code, quote, rule, and link controls
 - Live Hugo-oriented Markdown preview with YAML and TOML front matter removed
 - Lightbox and Hugo `ref` shortcode preview support
 - Resizable project sidebar, editor, and preview panes

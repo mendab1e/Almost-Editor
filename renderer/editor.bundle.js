@@ -25217,6 +25217,10 @@ function createMarkdownEditor(parent, onChange) {
   return {
     getValue,
     setValue,
+    getSelection() {
+      const range = view.state.selection.main;
+      return { from: range.from, to: range.to, text: view.state.sliceDoc(range.from, range.to) };
+    },
     focus: () => view.focus(),
     setTheme: (mode) => view.dispatch({
       effects: theme2.reconfigure(mode === "dark" ? oneDark : lightTheme)
@@ -25227,6 +25231,13 @@ function createMarkdownEditor(parent, onChange) {
       view.dispatch({
         changes: { from: range.from, to: range.to, insert: text },
         selection: { anchor: range.from + text.length }
+      });
+      view.focus();
+    },
+    replaceRange(from, to, text, selectionStart = from + text.length, selectionEnd = selectionStart) {
+      view.dispatch({
+        changes: { from, to, insert: text },
+        selection: { anchor: selectionStart, head: selectionEnd }
       });
       view.focus();
     },

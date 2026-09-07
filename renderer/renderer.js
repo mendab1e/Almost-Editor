@@ -1,7 +1,17 @@
 import { createMarkdownEditor } from './editor.bundle.js';
+import {
+  buildMarkdownLink,
+  formatMarkdownBlock,
+  insertMarkdownBlock,
+  wrapMarkdownSelection
+} from './markdown-editing.mjs';
 import { expandHugoRefLinks, titleFromFrontMatter, withoutHugoFrontMatter } from './markdown-tools.mjs';
 
+const editorPane = document.getElementById('editor-pane');
 const editorHost = document.getElementById('editor');
+const formatToolbar = document.getElementById('format-toolbar');
+const blockStyleSelect = document.getElementById('block-style');
+const insertLinkBtn = document.getElementById('insert-link');
 const preview = document.getElementById('preview');
 const panes = document.getElementById('panes');
 const toggleBtn = document.getElementById('toggle-preview');
@@ -24,6 +34,15 @@ const newPostForm = document.getElementById('new-post-form');
 const newPostName = document.getElementById('new-post-name');
 const newPostError = document.getElementById('new-post-error');
 const cancelNewPostBtn = document.getElementById('cancel-new-post');
+const linkDialog = document.getElementById('link-dialog');
+const linkForm = document.getElementById('link-form');
+const linkTextInput = document.getElementById('link-text');
+const linkUrlInput = document.getElementById('link-url');
+const linkPostSelect = document.getElementById('link-post');
+const linkUrlFields = document.getElementById('link-url-fields');
+const linkPostFields = document.getElementById('link-post-fields');
+const linkError = document.getElementById('link-error');
+const cancelLinkBtn = document.getElementById('cancel-link');
 const imageOptionsDialog = document.getElementById('image-options-dialog');
 const imageOptionsForm = document.getElementById('image-options-form');
 const imageResizeInput = document.getElementById('image-resize');
@@ -46,6 +65,8 @@ let renderDebounce = null;
 let savedConfig = { theme: 'system', fontSize: 15 };
 let hugoProjectPath = null;
 let currentProjectPostName = null;
+let hugoPosts = [];
+let pendingLinkSelection = null;
 const openDocuments = new Map([
   ['__untitled__', { savedContent: '', content: '', dirty: false }]
 ]);
@@ -194,20 +215,21 @@ setupHorizontalResizer(sidebarResizer, () => sidebarEl.getBoundingClientRect().w
   sidebarEl.style.flexBasis = `${width}px`;
 });
 
-setupHorizontalResizer(previewResizer, () => editorHost.getBoundingClientRect().width, (delta, startWidth) => {
+setupHorizontalResizer(previewResizer, () => editorPane.getBoundingClientRect().width, (delta, startWidth) => {
   const usableWidth = panes.getBoundingClientRect().width - previewResizer.getBoundingClientRect().width;
   const editorWidth = Math.max(240, Math.min(usableWidth - 240, startWidth + delta));
-  editorHost.style.flex = `0 0 ${editorWidth}px`;
+  editorPane.style.flex = `0 0 ${editorWidth}px`;
   preview.style.flex = '1 1 0';
 });
 
 function balanceEditorAndPreview() {
-  editorHost.style.flex = '1 1 50%';
+  editorPane.style.flex = '1 1 50%';
   preview.style.flex = '1 1 50%';
 }
 
 function closeProjectSidebar() {
   hugoProjectPath = null;
+  hugoPosts = [];
   workspaceEl.classList.add('project-closed');
 }
 
@@ -499,6 +521,141 @@ postListEl.addEventListener('click', async (event) => {
   if (!result.ok) setStatus(result.error || 'Could not open post', true);
 });
 
+function applyEditorEdit(edit) {
+  editor.replaceRange(edit.from, edit.to, edit.insert, edit.selectionStart, edit.selectionEnd);
+}
+
+function applyInlineFormat(prefix, suffix = prefix, placeholder = 'text') {
+  const selection = editor.getSelection();
+  applyEditorEdit(wrapMarkdownSelection(editor.getValue(), selection.from, selection.to, prefix, suffix, placeholder));
+}
+
+function applyBlockFormat(style) {
+  const selection = editor.getSelection();
+  applyEditorEdit(formatMarkdownBlock(editor.getValue(), selection.from, selection.to, style));
+}
+
+function applyFormat(format) {
+  const inlineFormats = {
+    bold: ['**', '**', 'bold text'],
+    italic: ['*', '*', 'italic text'],
+    strikethrough: ['~~', '~~', 'struck text'],
+    code: ['`', '`', 'code']
+  };
+  if (inlineFormats[format]) {
+    applyInlineFormat(...inlineFormats[format]);
+    return;
+  }
+
+  if (['blockquote', 'unordered', 'ordered', 'task'].includes(format)) {
+    applyBlockFormat(format);
+    return;
+  }
+
+  const selection = editor.getSelection();
+  if (format === 'codeblock') {
+    applyEditorEdit(insertMarkdownBlock(
+      editor.getValue(),
+      selection.from,
+      selection.to,
+      (content) => `\`\`\`\n${content}\n\`\`\``,
+      'code'
+    ));
+  } else if (format === 'rule') {
+    applyEditorEdit(insertMarkdownBlock(editor.getValue(), selection.to, selection.to, () => '---'));
+  }
+}
+
+formatToolbar.addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-format]');
+  if (button) applyFormat(button.dataset.format);
+});
+
+blockStyleSelect.addEventListener('change', () => {
+  if (!blockStyleSelect.value) return;
+  applyBlockFormat(blockStyleSelect.value);
+  blockStyleSelect.value = '';
+});
+
+function selectedLinkType() {
+  return linkForm.elements.linkType.value;
+}
+
+function updateLinkTargetFields() {
+  const isPost = selectedLinkType() === 'post';
+  linkUrlFields.classList.toggle('hidden', isPost);
+  linkPostFields.classList.toggle('hidden', !isPost);
+  linkUrlInput.disabled = isPost;
+  linkPostSelect.disabled = !isPost;
+}
+
+function populateLinkPostOptions() {
+  linkPostSelect.replaceChildren();
+  if (!hugoPosts.length) {
+    const option = document.createElement('option');
+    option.textContent = 'Open a Hugo project to select an article';
+    option.value = '';
+    option.disabled = true;
+    option.selected = true;
+    linkPostSelect.append(option);
+    return;
+  }
+
+  for (const post of hugoPosts) {
+    const option = document.createElement('option');
+    option.value = post.relativePath;
+    option.textContent = post.name;
+    linkPostSelect.append(option);
+  }
+}
+
+function openLinkDialog() {
+  pendingLinkSelection = editor.getSelection();
+  linkTextInput.value = pendingLinkSelection.text;
+  linkUrlInput.value = '';
+  linkError.textContent = '';
+  linkForm.elements.linkType.value = 'url';
+  populateLinkPostOptions();
+  updateLinkTargetFields();
+  linkDialog.classList.remove('hidden');
+  (pendingLinkSelection.text ? linkUrlInput : linkTextInput).focus();
+}
+
+function closeLinkDialog() {
+  linkDialog.classList.add('hidden');
+  pendingLinkSelection = null;
+  editor.focus();
+}
+
+insertLinkBtn.addEventListener('click', openLinkDialog);
+linkForm.addEventListener('change', (event) => {
+  if (event.target.name === 'linkType') {
+    updateLinkTargetFields();
+    (selectedLinkType() === 'post' ? linkPostSelect : linkUrlInput).focus();
+  }
+});
+cancelLinkBtn.addEventListener('click', closeLinkDialog);
+linkDialog.addEventListener('click', (event) => {
+  if (event.target === linkDialog) closeLinkDialog();
+});
+linkForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (!pendingLinkSelection) return;
+
+  try {
+    const type = selectedLinkType();
+    const value = type === 'post' ? linkPostSelect.value : linkUrlInput.value;
+    const markdown = buildMarkdownLink(linkTextInput.value, { type, value });
+    const selection = pendingLinkSelection;
+    linkDialog.classList.add('hidden');
+    pendingLinkSelection = null;
+    editor.replaceRange(selection.from, selection.to, markdown);
+    setStatus(type === 'post' ? 'Article link inserted' : 'Link inserted');
+  } catch (error) {
+    linkError.textContent = error.message;
+  }
+});
+
 function setStatus(msg, isError) {
   statusEl.textContent = msg;
   statusEl.style.color = isError ? '#e06c75' : 'var(--success)';
@@ -573,6 +730,7 @@ if (window.api) {
 
   window.api.onProjectOpened(({ projectPath, posts }) => {
     hugoProjectPath = projectPath;
+    hugoPosts = posts;
     workspaceEl.classList.remove('project-closed');
     projectNameEl.textContent = projectPath.split('/').pop();
     projectNameEl.title = projectPath;
@@ -619,6 +777,10 @@ renderPreview();
 
 // Cmd+S shortcut inside the editor itself too
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !linkDialog.classList.contains('hidden')) {
+    closeLinkDialog();
+    return;
+  }
   if (e.key === 'Escape' && !imageOptionsDialog.classList.contains('hidden')) {
     closeImageOptions();
     return;
@@ -634,5 +796,18 @@ document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key === 's') {
     e.preventDefault();
     saveCurrent(e.shiftKey);
+    return;
+  }
+  if (!linkDialog.classList.contains('hidden') || !newPostDialog.classList.contains('hidden') ||
+      !imageOptionsDialog.classList.contains('hidden')) return;
+  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+    const shortcut = e.key.toLowerCase();
+    if (shortcut === 'b' || shortcut === 'i') {
+      e.preventDefault();
+      applyFormat(shortcut === 'b' ? 'bold' : 'italic');
+    } else if (shortcut === 'k') {
+      e.preventDefault();
+      if (linkDialog.classList.contains('hidden')) openLinkDialog();
+    }
   }
 });

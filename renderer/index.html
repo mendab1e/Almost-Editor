@@ -49,7 +49,33 @@
     </aside>
     <div id="sidebar-resizer" class="split-resizer" role="separator" aria-label="Resize post sidebar" aria-orientation="vertical"></div>
     <div id="panes">
-      <div id="editor" aria-label="Markdown editor"></div>
+      <section id="editor-pane" aria-label="Markdown editor pane">
+        <div id="format-toolbar" role="toolbar" aria-label="Markdown formatting">
+          <select id="block-style" aria-label="Text style" title="Text style">
+            <option value="" selected disabled>Text style</option>
+            <option value="paragraph">Paragraph</option>
+            <option value="h1">Heading 1</option>
+            <option value="h2">Heading 2</option>
+            <option value="h3">Heading 3</option>
+          </select>
+          <span class="format-separator" aria-hidden="true"></span>
+          <button type="button" data-format="bold" aria-label="Bold" title="Bold (⌘B)"><strong>B</strong></button>
+          <button type="button" data-format="italic" aria-label="Italic" title="Italic (⌘I)"><em>I</em></button>
+          <button type="button" data-format="strikethrough" aria-label="Strikethrough" title="Strikethrough"><s>S</s></button>
+          <button type="button" data-format="code" aria-label="Inline code" title="Inline code"><code>&lt;/&gt;</code></button>
+          <button id="insert-link" type="button" aria-label="Insert link" title="Insert link (⌘K)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.6 13.4a4 4 0 0 0 5.7 0l2.1-2.1a4 4 0 0 0-5.7-5.7l-1.2 1.2M13.4 10.6a4 4 0 0 0-5.7 0l-2.1 2.1a4 4 0 0 0 5.7 5.7l1.2-1.2"/></svg>
+          </button>
+          <span class="format-separator" aria-hidden="true"></span>
+          <button type="button" data-format="blockquote" aria-label="Block quote" title="Block quote">❯</button>
+          <button type="button" data-format="unordered" aria-label="Bulleted list" title="Bulleted list">•≡</button>
+          <button type="button" data-format="ordered" aria-label="Numbered list" title="Numbered list">1.</button>
+          <button type="button" data-format="task" aria-label="Task list" title="Task list">☑</button>
+          <button type="button" data-format="codeblock" aria-label="Code block" title="Code block"><code>{ }</code></button>
+          <button type="button" data-format="rule" aria-label="Horizontal rule" title="Horizontal rule">―</button>
+        </div>
+        <div id="editor" aria-label="Markdown editor"></div>
+      </section>
       <div id="preview-resizer" class="split-resizer" role="separator" aria-label="Resize preview" aria-orientation="vertical"></div>
       <div id="preview"></div>
     </div>
@@ -69,6 +95,32 @@
       <div class="modal-actions">
         <button id="cancel-new-post" type="button">Cancel</button>
         <button type="submit">Create Post</button>
+      </div>
+    </form>
+  </div>
+  <div id="link-dialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="link-dialog-title">
+    <form id="link-form" class="modal-card">
+      <h2 id="link-dialog-title">Insert link</h2>
+      <label for="link-text">Link text</label>
+      <input id="link-text" name="linkText" autocomplete="off" required>
+      <fieldset class="link-target-options">
+        <legend>Link to</legend>
+        <label><input type="radio" name="linkType" value="url" checked> URL</label>
+        <label><input type="radio" name="linkType" value="post"> Blog article</label>
+      </fieldset>
+      <div id="link-url-fields">
+        <label for="link-url">URL</label>
+        <input id="link-url" name="url" type="text" inputmode="url" placeholder="https://example.com">
+      </div>
+      <div id="link-post-fields" class="hidden">
+        <label for="link-post">Blog article</label>
+        <select id="link-post" name="post"></select>
+        <p class="field-help">Article links use Hugo's <code>ref</code> shortcode.</p>
+      </div>
+      <p id="link-error" class="modal-error" role="alert"></p>
+      <div class="modal-actions">
+        <button id="cancel-link" type="button">Cancel</button>
+        <button type="submit">Insert link</button>
       </div>
     </form>
   </div>

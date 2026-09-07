@@ -118,10 +118,54 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 .post-entry-dirty { margin-left: auto; color: #f79009; font-size: 14px; line-height: 1; }
 .post-entry-dirty.hidden { display: none; }
 .post-entry:hover, .post-entry.active { background: var(--control-hover); }
-}
-#editor {
+#editor-pane {
   flex: 1 1 50%;
   height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--app-bg);
+}
+#format-toolbar {
+  flex: 0 0 36px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 4px 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--preview-bg);
+}
+#format-toolbar button, #format-toolbar select {
+  flex: 0 0 auto;
+  height: 27px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: 12px/1 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+}
+#format-toolbar button {
+  min-width: 28px;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+#format-toolbar select {
+  max-width: 105px;
+  padding: 2px 5px;
+  background: var(--control-bg);
+  border-color: var(--border);
+}
+#format-toolbar button:hover, #format-toolbar button:focus-visible { background: var(--control-hover); border-color: var(--border); }
+#format-toolbar button:focus-visible, #format-toolbar select:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
+#format-toolbar button code { font: 11px/1 "SF Mono", Menlo, monospace; }
+#format-toolbar button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; vertical-align: middle; }
+.format-separator { flex: 0 0 1px; align-self: stretch; margin: 2px 3px; background: var(--border); }
+#editor {
+  flex: 1 1 auto;
+  min-height: 0;
   min-width: 0;
   overflow: hidden;
 }
@@ -172,11 +216,16 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 .modal-card h2 { margin: 0 0 16px; font-size: 17px; }
 .modal-card h3 { margin: 0; font-size: 13px; }
 .modal-card label { display: block; margin-bottom: 6px; font-size: 13px; }
-.modal-card input, .modal-card textarea {
+.modal-card input, .modal-card textarea, .modal-card select {
   width: 100%; padding: 7px 8px; border: 1px solid var(--border); border-radius: 4px;
   background: var(--app-bg); color: var(--text); font: inherit;
 }
 .modal-card textarea { resize: vertical; font-family: "SF Mono", Menlo, monospace; font-size: 12px; line-height: 1.45; }
+.link-target-options { display: flex; gap: 18px; margin: 16px 0 13px; padding: 0; border: 0; }
+.link-target-options legend { margin-bottom: 7px; font-size: 13px; }
+.link-target-options label { display: flex; align-items: center; gap: 6px; margin: 0; }
+.link-target-options input { width: auto; margin: 0; }
+#link-url-fields.hidden, #link-post-fields.hidden { display: none; }
 .image-options-card { width: min(520px, 100%); }
 .image-options-section + .image-options-section { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
 .image-options-section-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
@@ -193,7 +242,7 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 .modal-actions button { padding: 5px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--control-bg); color: var(--text); cursor: pointer; }
 .modal-actions button[type="submit"] { color: #fff; background: #2563eb; border-color: #2563eb; }
 .modal-error { min-height: 18px; margin: 7px 0 0; color: #e06c75; font-size: 12px; }
-#panes.preview-hidden #editor { flex: 1 1 100%; }
+#panes.preview-hidden #editor-pane { flex: 1 1 100%; }
 #status {
   position: fixed;
   z-index: 12;
