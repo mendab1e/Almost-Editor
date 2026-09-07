@@ -3,7 +3,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
-const { createHugoFrontMatter, isValidPostName, listHugoPosts } = require('../lib/hugo-project');
+const {
+  createHugoFrontMatter,
+  isValidPostName,
+  listHugoPosts,
+  resolveHugoPostPath
+} = require('../lib/hugo-project');
 
 test('lists nested Hugo page bundles and skips directories without index.md', (t) => {
   const project = fs.mkdtempSync(path.join(os.tmpdir(), 'almost-editor-project-'));
@@ -32,6 +37,16 @@ test('validates page bundle directory names', () => {
   assert.equal(isValidPostName(''), false);
   assert.equal(isValidPostName('../escape'), false);
   assert.equal(isValidPostName('nested/post'), false);
+});
+
+test('resolves nested posts without allowing paths outside content/posts', () => {
+  const project = path.join(os.tmpdir(), 'almost-editor-project');
+  assert.equal(
+    resolveHugoPostPath(project, 'archive/old-post'),
+    path.join(project, 'content', 'posts', 'archive', 'old-post', 'index.md')
+  );
+  assert.equal(resolveHugoPostPath(project, '../../../outside'), null);
+  assert.equal(resolveHugoPostPath(project, ''), null);
 });
 
 test('creates the expected TOML front matter', () => {

@@ -42,7 +42,7 @@ The suite covers Hugo project discovery, generated post front matter, image-proc
 
 Open the root of a Hugo project with **Open project**. Almost Editor scans `content/posts` for directories containing `index.md` and shows those post bundles in the sidebar.
 
-Select a post to open its `index.md`. The editor keeps unsaved buffers in memory while you move between posts, and marks changed posts with a yellow dot in both the sidebar and bottom status area. Save to write the changes to disk. Closing the window with unsaved buffers prompts you to save all changes, discard them, or cancel closing.
+Select a post to open its `index.md`. The editor keeps unsaved buffers in memory while you move between posts, and marks changed posts with a yellow dot in both the sidebar and bottom status area. Save to write the changes to disk. Closing the window with unsaved buffers prompts you to save all changes, discard them, or cancel closing. When Almost Editor starts again, it restores the last Hugo project and reopens the post that was active when the app closed.
 
 Use the formatting toolbar above the editor for headings, bold, italic, strikethrough, inline and fenced code, block quotes, bulleted, numbered, and task lists, links, and horizontal rules. Bold, italic, and link insertion are also available with <kbd>Cmd/Ctrl+B</kbd>, <kbd>Cmd/Ctrl+I</kbd>, and <kbd>Cmd/Ctrl+K</kbd>.
 
@@ -125,7 +125,7 @@ The template must contain `{src}`; `{thumb}` and `{alt}` are optional, so standa
 - Lightbox and Hugo `ref` shortcode preview support
 - Resizable project sidebar, editor, and preview panes
 - Light and dark themes, plus a system-theme option
-- Persistent theme, text size, image settings, last file directory, and last Hugo project
+- Persistent theme, text size, image settings, window size, last file directory, last Hugo project, and active post
 - Project sidebar for Hugo post bundles and in-app post creation
 - Unsaved-change indicators and in-memory drafts while switching posts
 - Image conversion and configurable shortcode insertion powered by ImageMagick

@@ -3,8 +3,14 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { execFile } = require('child_process');
-const { createHugoFrontMatter, isValidPostName, listHugoPosts } = require('./lib/hugo-project');
+const {
+  createHugoFrontMatter,
+  isValidPostName,
+  listHugoPosts,
+  resolveHugoPostPath
+} = require('./lib/hugo-project');
 const { buildImageShortcode, buildMogrifyArgs, isGifPath } = require('./lib/image-processing');
+const { normalizeWindowState } = require('./lib/window-state');
 
 app.setName('Almost Editor');
 
@@ -25,7 +31,9 @@ const DEFAULT_CONFIG = {
   theme: 'system',
   fontSize: 15,
   lastOpenedDirectory: null,
-  lastHugoProject: null
+  lastHugoProject: null,
+  lastHugoPost: null,
+  windowState: null
 };
 
 function loadConfig() {
@@ -45,9 +53,10 @@ function saveConfig(cfg) {
 
 function createWindow() {
   allowWindowClose = false;
+  const windowState = normalizeWindowState(loadConfig().windowState);
   mainWindow = new BrowserWindow({
-    width: 1000,
-    height: 720,
+    width: windowState.width,
+    height: windowState.height,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -55,6 +64,8 @@ function createWindow() {
     }
   });
 
+  if (windowState.isMaximized) mainWindow.maximize();
+  mainWindow.webContents.once('did-finish-load', restoreLastSession);
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   const menu = Menu.buildFromTemplate([
@@ -77,13 +88,31 @@ function createWindow() {
   Menu.setApplicationMenu(menu);
 
   mainWindow.on('close', (event) => {
-    if (allowWindowClose) return;
+    if (allowWindowClose) {
+      persistWindowState();
+      return;
+    }
     event.preventDefault();
     mainWindow.webContents.send('request-window-close');
   });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    currentFilePath = null;
+  });
+}
+
+function persistWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const bounds = mainWindow.getNormalBounds();
+  const cfg = loadConfig();
+  saveConfig({
+    ...cfg,
+    windowState: {
+      width: bounds.width,
+      height: bounds.height,
+      isMaximized: mainWindow.isMaximized()
+    }
   });
 }
 
@@ -115,6 +144,37 @@ function sendProjectOpened(projectPath) {
   return { ok: true, projectPath, posts };
 }
 
+function openHugoPost(projectPath, relativePath, remember = true) {
+  const postPath = resolveHugoPostPath(projectPath, relativePath);
+  if (!postPath || !fs.existsSync(postPath) || !fs.statSync(postPath).isFile()) {
+    return { ok: false, error: 'The selected post could not be found.' };
+  }
+  const content = fs.readFileSync(postPath, 'utf8');
+  currentFilePath = postPath;
+  if (remember) {
+    const cfg = loadConfig();
+    saveConfig({
+      ...cfg,
+      lastOpenedDirectory: path.dirname(postPath),
+      lastHugoProject: projectPath,
+      lastHugoPost: relativePath
+    });
+  }
+  mainWindow.webContents.send('file-opened', { filePath: postPath, content, projectPath });
+  return { ok: true, filePath: postPath };
+}
+
+function restoreLastSession() {
+  const { lastHugoProject, lastHugoPost } = loadConfig();
+  if (!lastHugoProject || !fs.existsSync(lastHugoProject)) return;
+  try {
+    sendProjectOpened(lastHugoProject);
+    if (lastHugoPost) openHugoPost(lastHugoProject, lastHugoPost, false);
+  } catch (error) {
+    console.error('Failed to restore Hugo project:', error);
+  }
+}
+
 function openHugoProject() {
   const cfg = loadConfig();
   const result = dialog.showOpenDialogSync(mainWindow, {
@@ -126,7 +186,11 @@ function openHugoProject() {
   try {
     const projectPath = result[0];
     const payload = sendProjectOpened(projectPath);
-    saveConfig({ ...cfg, lastHugoProject: projectPath });
+    saveConfig({
+      ...cfg,
+      lastHugoProject: projectPath,
+      lastHugoPost: cfg.lastHugoProject === projectPath ? cfg.lastHugoPost : null
+    });
     return payload;
   } catch (error) {
     dialog.showErrorBox('Cannot open Hugo project', error.message);
@@ -139,7 +203,8 @@ function openHugoProject() {
 ipcMain.handle('get-config', () => loadConfig());
 
 ipcMain.handle('save-config', (event, cfg) => {
-  saveConfig(cfg);
+  if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return loadConfig();
+  saveConfig({ ...loadConfig(), ...cfg });
   return loadConfig();
 });
 
@@ -150,19 +215,9 @@ ipcMain.handle('open-file-dialog', () => {
 
 ipcMain.handle('open-hugo-project-dialog', () => openHugoProject());
 
-ipcMain.handle('open-hugo-post', (event, { projectPath, relativePath }) => {
-  const postsRoot = path.resolve(projectPath, 'content', 'posts');
-  const postPath = path.resolve(postsRoot, relativePath, 'index.md');
-  if (!postPath.startsWith(`${postsRoot}${path.sep}`) || !fs.existsSync(postPath)) {
-    return { ok: false, error: 'The selected post could not be found.' };
-  }
-  const content = fs.readFileSync(postPath, 'utf8');
-  currentFilePath = postPath;
-  const cfg = loadConfig();
-  saveConfig({ ...cfg, lastOpenedDirectory: path.dirname(postPath), lastHugoProject: projectPath });
-  mainWindow.webContents.send('file-opened', { filePath: postPath, content, projectPath });
-  return { ok: true, filePath: postPath };
-});
+ipcMain.handle('open-hugo-post', (event, { projectPath, relativePath }) => (
+  openHugoPost(projectPath, relativePath)
+));
 
 ipcMain.handle('create-hugo-post', (event, { projectPath, name }) => {
   const postName = String(name || '').trim();
@@ -190,7 +245,12 @@ ipcMain.handle('create-hugo-post', (event, { projectPath, name }) => {
     fs.writeFileSync(indexPath, frontMatter, 'utf8');
     currentFilePath = indexPath;
     const cfg = loadConfig();
-    saveConfig({ ...cfg, lastOpenedDirectory: postDirectory, lastHugoProject: projectPath });
+    saveConfig({
+      ...cfg,
+      lastOpenedDirectory: postDirectory,
+      lastHugoProject: projectPath,
+      lastHugoPost: postName
+    });
     sendProjectOpened(projectPath);
     mainWindow.webContents.send('file-opened', { filePath: indexPath, content: frontMatter, projectPath });
     return { ok: true, filePath: indexPath };
@@ -331,15 +391,6 @@ ipcMain.handle('process-image', async (event, { sourcePath }) => {
 app.whenReady().then(() => {
   if (!fs.existsSync(CONFIG_PATH)) saveConfig(DEFAULT_CONFIG);
   createWindow();
-  mainWindow.webContents.once('did-finish-load', () => {
-    const { lastHugoProject } = loadConfig();
-    if (!lastHugoProject || !fs.existsSync(lastHugoProject)) return;
-    try {
-      sendProjectOpened(lastHugoProject);
-    } catch (error) {
-      console.error('Failed to restore Hugo project:', error);
-    }
-  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

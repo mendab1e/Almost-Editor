@@ -107,11 +107,12 @@ async function initializeTheme() {
 }
 
 themeSelect.addEventListener('change', async () => {
-  savedConfig = { ...savedConfig, theme: themeSelect.value };
+  const theme = themeSelect.value;
+  savedConfig = { ...savedConfig, theme };
   applyTheme();
   if (window.api) {
     try {
-      savedConfig = await window.api.saveConfig(savedConfig);
+      savedConfig = await window.api.saveConfig({ theme });
     } catch (error) {
       setStatus('Theme preference could not be saved', true);
       console.error('Unable to save theme preference:', error);
@@ -125,7 +126,7 @@ fontSizeSelect.addEventListener('change', async () => {
   editor.setFontSize(fontSize);
   if (window.api) {
     try {
-      savedConfig = await window.api.saveConfig(savedConfig);
+      savedConfig = await window.api.saveConfig({ fontSize });
     } catch (error) {
       setStatus('Text size preference could not be saved', true);
       console.error('Unable to save text size preference:', error);
@@ -458,17 +459,17 @@ imageOptionsForm.addEventListener('submit', async (event) => {
     imageOptionsError.textContent = 'The shortcode template must include the {src} placeholder.';
     return;
   }
-  savedConfig = {
-    ...savedConfig,
+  const imageOptions = {
     imageResize,
     imageQuality,
     thumbnailResize,
     thumbnailQuality,
     imageShortcodeTemplate
   };
+  savedConfig = { ...savedConfig, ...imageOptions };
   if (window.api) {
     try {
-      savedConfig = await window.api.saveConfig(savedConfig);
+      savedConfig = await window.api.saveConfig(imageOptions);
       closeImageOptions();
       setStatus('Image options saved');
     } catch (error) {
