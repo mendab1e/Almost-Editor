@@ -671,7 +671,7 @@ async function handleImageFile(filePath) {
     setStatus('Image processing is unavailable because the Electron API did not load', true);
     return;
   }
-  setStatus('Converting image…');
+  setStatus('Inserting image…');
   const result = await window.api.processImage({ sourcePath: filePath });
   if (!result.ok) {
     setStatus(result.error, true);

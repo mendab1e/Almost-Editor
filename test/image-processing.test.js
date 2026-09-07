@@ -1,12 +1,18 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { buildImageShortcode, buildMogrifyArgs } = require('../lib/image-processing');
+const { buildImageShortcode, buildMogrifyArgs, isGifPath } = require('../lib/image-processing');
 
 test('builds the ImageMagick mogrify command for a JPEG output', () => {
   assert.deepEqual(
     buildMogrifyArgs('/tmp/scan.png', '/post/images', '1500x1500', 70),
     ['mogrify', '-path', '/post/images', '-format', 'jpg', '-resize', '1500x1500', '-quality', '70', '/tmp/scan.png']
   );
+});
+
+test('recognizes GIF files that must bypass ImageMagick', () => {
+  assert.equal(isGifPath('/tmp/animation.gif'), true);
+  assert.equal(isGifPath('/tmp/animation.GIF'), true);
+  assert.equal(isGifPath('/tmp/still.png'), false);
 });
 
 test('builds an image shortcode from the configured template', () => {

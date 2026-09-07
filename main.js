@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const { execFile } = require('child_process');
 const { createHugoFrontMatter, isValidPostName, listHugoPosts } = require('./lib/hugo-project');
-const { buildImageShortcode, buildMogrifyArgs } = require('./lib/image-processing');
+const { buildImageShortcode, buildMogrifyArgs, isGifPath } = require('./lib/image-processing');
 
 app.setName('Almost Editor');
 
@@ -239,6 +239,27 @@ ipcMain.handle('process-image', async (event, { sourcePath }) => {
   const baseName = path.basename(sourcePath, path.extname(sourcePath));
   const safeName = baseName.replace(/[^a-z0-9-_]/gi, '-').toLowerCase();
   const extension = path.extname(sourcePath) || '.image';
+
+  if (isGifPath(sourcePath)) {
+    const gifName = `${safeName}.gif`;
+    const destinationPath = path.join(imagesDir, gifName);
+    try {
+      if (path.resolve(sourcePath) !== path.resolve(destinationPath)) {
+        fs.copyFileSync(sourcePath, destinationPath);
+      }
+      const src = path.posix.join(cfg.imagesSubdir, gifName);
+      return {
+        ok: true,
+        tag: buildImageShortcode(
+          cfg.imageShortcodeTemplate || DEFAULT_CONFIG.imageShortcodeTemplate,
+          { src, thumb: src, alt: '' }
+        )
+      };
+    } catch (error) {
+      return { ok: false, error: `GIF could not be copied: ${error.message}` };
+    }
+  }
+
   const tempDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'almost-editor-image-'));
   const fullInput = path.join(tempDirectory, `${safeName}${extension}`);
   const thumbInput = path.join(tempDirectory, `${safeName}_thumb${extension}`);

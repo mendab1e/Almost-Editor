@@ -95,6 +95,8 @@ Drag an image into the editor to create two JPEG files in the current post's `im
 | `images/image_name.jpg` | `1500x1500` | `70` |
 | `images/image_name_thumb.jpg` | `500x500` | `60` |
 
+GIF files are copied into `images/` unchanged so animation is preserved. Their inserted shortcode uses the same GIF path for both `{src}` and `{thumb}`.
+
 Almost Editor then inserts this default shortcode:
 
 ```go
