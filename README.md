@@ -64,6 +64,8 @@ content/posts/<post-name>/
 └── index.md
 ```
 
+Right-click a post in the project sidebar and choose **Delete Post…** to remove its entire page-bundle directory. Almost Editor shows a confirmation window before permanently deleting the Markdown file, images, and any other files in that directory.
+
 The generated `index.md` uses Hugo TOML front matter:
 
 ```toml
@@ -136,7 +138,7 @@ The template must contain `{src}`; `{thumb}` and `{alt}` are optional, so standa
 - Resizable project sidebar, editor, and preview panes
 - Light and dark themes, plus a system-theme option
 - Persistent theme, text size, image settings, window size, last file directory, last Hugo project, and active post
-- Project sidebar for Hugo post bundles and in-app post creation
+- Project sidebar for Hugo post bundles, in-app post creation, and confirmed directory deletion
 - Unsaved-change indicators and in-memory drafts while switching posts
 - Image conversion and configurable shortcode insertion powered by ImageMagick
 

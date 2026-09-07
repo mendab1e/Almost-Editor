@@ -8,6 +8,25 @@ export function dirtyDocumentsForClose(openDocuments, currentDocumentKey) {
     });
 }
 
+function normalizedPath(filePath) {
+  return typeof filePath === 'string' ? filePath.replaceAll('\\', '/').replace(/\/+$/, '') : '';
+}
+
+export function documentKeysInDirectory(documents, directoryPath) {
+  const directory = normalizedPath(directoryPath);
+  if (!directory) return [];
+  const prefix = `${directory}/`;
+  return Array.from(documents)
+    .filter(([, document]) => normalizedPath(document.filePath).startsWith(prefix))
+    .map(([key]) => key);
+}
+
+export function removeDocumentsInDirectory(documents, directoryPath) {
+  const keys = documentKeysInDirectory(documents, directoryPath);
+  keys.forEach(key => documents.delete(key));
+  return keys;
+}
+
 // If the draft changed during conversion, append rather than using a stale offset.
 export function imageInsertion(content, originalContent, position, tag) {
   return { from: content === originalContent ? position : content.length, insert: `\n${tag}\n` };

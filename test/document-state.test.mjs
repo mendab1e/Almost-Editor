@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { dirtyDocumentsForClose } from '../renderer/document-state.mjs';
+import {
+  dirtyDocumentsForClose,
+  documentKeysInDirectory,
+  removeDocumentsInDirectory
+} from '../renderer/document-state.mjs';
 
 test('returns every dirty document and saves the current document last', () => {
   const documents = new Map([
@@ -18,6 +22,28 @@ test('returns every dirty document and saves the current document last', () => {
 test('returns an empty list when no documents are dirty', () => {
   const documents = new Map([['__untitled__', { dirty: false }]]);
   assert.deepEqual(dirtyDocumentsForClose(documents, '__untitled__'), []);
+});
+
+test('finds and removes every open document inside a deleted post directory', () => {
+  const documents = new Map([
+    ['/project/content/posts/parent/index.md', { filePath: '/project/content/posts/parent/index.md' }],
+    ['/project/content/posts/parent/child/index.md', { filePath: '/project/content/posts/parent/child/index.md' }],
+    ['/project/content/posts/parenthetical/index.md', { filePath: '/project/content/posts/parenthetical/index.md' }],
+    ['draft:1', { filePath: null }]
+  ]);
+
+  assert.deepEqual(documentKeysInDirectory(documents, '/project/content/posts/parent'), [
+    '/project/content/posts/parent/index.md',
+    '/project/content/posts/parent/child/index.md'
+  ]);
+  assert.deepEqual(removeDocumentsInDirectory(documents, '/project/content/posts/parent'), [
+    '/project/content/posts/parent/index.md',
+    '/project/content/posts/parent/child/index.md'
+  ]);
+  assert.deepEqual(Array.from(documents.keys()), [
+    '/project/content/posts/parenthetical/index.md',
+    'draft:1'
+  ]);
 });
 
 import { imageInsertion } from '../renderer/document-state.mjs';

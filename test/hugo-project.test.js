@@ -7,6 +7,7 @@ const {
   createHugoFrontMatter,
   isValidPostName,
   listHugoPosts,
+  resolveHugoPostDirectory,
   resolveHugoPostPath
 } = require('../lib/hugo-project');
 
@@ -42,9 +43,16 @@ test('validates page bundle directory names', () => {
 test('resolves nested posts without allowing paths outside content/posts', () => {
   const project = path.join(os.tmpdir(), 'almost-editor-project');
   assert.equal(
+    resolveHugoPostDirectory(project, 'archive/old-post'),
+    path.join(project, 'content', 'posts', 'archive', 'old-post')
+  );
+  assert.equal(
     resolveHugoPostPath(project, 'archive/old-post'),
     path.join(project, 'content', 'posts', 'archive', 'old-post', 'index.md')
   );
+  assert.equal(resolveHugoPostDirectory(project, '../../../outside'), null);
+  assert.equal(resolveHugoPostDirectory(project, '..'), null);
+  assert.equal(resolveHugoPostDirectory(project, ''), null);
   assert.equal(resolveHugoPostPath(project, '../../../outside'), null);
   assert.equal(resolveHugoPostPath(project, ''), null);
 });

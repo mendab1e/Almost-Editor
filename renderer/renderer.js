@@ -6,7 +6,13 @@ import {
   insertMarkdownBlock,
   wrapMarkdownSelection
 } from './markdown-editing.mjs';
-import { dirtyDocumentsForClose, completeDocumentSave, recoverySnapshot } from './document-state.mjs';
+import {
+  completeDocumentSave,
+  dirtyDocumentsForClose,
+  documentKeysInDirectory,
+  recoverySnapshot,
+  removeDocumentsInDirectory
+} from './document-state.mjs';
 import { expandHugoRefLinks, titleFromFrontMatter, withoutHugoFrontMatter } from './markdown-tools.mjs';
 
 const editorPane = document.getElementById('editor-pane');
@@ -336,6 +342,22 @@ function renderPostList(posts) {
   updatePostDirtyIndicators();
 }
 
+function showEmptyProject(projectPath) {
+  let entry = Array.from(openDocuments).find(([, document]) => (
+    !document.filePath && !document.dirty && document.content === ''
+  ));
+  if (!entry) {
+    const key = `draft:${crypto.randomUUID()}`;
+    const document = { savedContent: '', content: '', dirty: false, filePath: null, projectPath };
+    openDocuments.set(key, document);
+    entry = [key, document];
+  }
+  entry[1].projectPath = projectPath;
+  hugoProjectPath = projectPath;
+  workspaceEl.classList.remove('project-closed');
+  activateDocument(entry[0]);
+}
+
 function highlightCurrentPost() {
   postListEl.querySelectorAll('.post-entry').forEach((button) => {
     const expectedEnding = `/content/posts/${button.dataset.postPath}/index.md`;
@@ -607,6 +629,22 @@ postListEl.addEventListener('click', async (event) => {
   if (!result.ok) setStatus(result.error || 'Could not open post', true);
 });
 
+postListEl.addEventListener('contextmenu', (event) => {
+  const button = event.target.closest('.post-entry');
+  if (!button || !window.api || !hugoProjectPath) return;
+  event.preventDefault();
+  const postDirectory = button.dataset.filePath.replace(/\/index\.md$/, '');
+  const hasUnsavedChanges = documentKeysInDirectory(openDocuments, postDirectory)
+    .some(key => openDocuments.get(key)?.dirty);
+  window.api.showHugoPostContextMenu({
+    projectPath: hugoProjectPath,
+    relativePath: button.dataset.postPath,
+    hasUnsavedChanges
+  }).then((result) => {
+    if (!result.ok) setStatus(result.error || 'Could not open the post menu', true);
+  }).catch(error => setStatus(`Could not open the post menu: ${error.message}`, true));
+});
+
 function applyEditorEdit(edit) {
   editor.replaceRange(edit.from, edit.to, edit.insert, edit.selectionStart, edit.selectionEnd);
 }
@@ -870,6 +908,41 @@ if (window.api) {
     renderPostList(posts);
     highlightCurrentPost();
     setStatus(`${posts.length} Hugo posts loaded`);
+  });
+
+  window.api.onHugoPostDeleted(async ({ projectPath, relativePath, postDirectory, posts }) => {
+    const removedKeys = removeDocumentsInDirectory(openDocuments, postDirectory);
+    const activePostWasDeleted = removedKeys.includes(currentDocumentKey);
+    hugoProjectPath = projectPath;
+    hugoPosts = posts;
+    workspaceEl.classList.remove('project-closed');
+    renderPostList(posts);
+
+    if (activePostWasDeleted) {
+      const openProjectDocument = Array.from(openDocuments)
+        .find(([, document]) => document.projectPath === projectPath && document.filePath);
+      if (openProjectDocument) {
+        activateDocument(openProjectDocument[0]);
+      } else if (posts.length) {
+        try {
+          const result = await window.api.openHugoPost({
+            projectPath,
+            relativePath: posts[0].relativePath
+          });
+          if (!result.ok) showEmptyProject(projectPath);
+        } catch {
+          showEmptyProject(projectPath);
+        }
+      } else {
+        showEmptyProject(projectPath);
+      }
+    } else {
+      highlightCurrentPost();
+      updateDirtyStatus();
+    }
+
+    flushRecovery().catch(error => setStatus(`Draft recovery failed: ${error.message}`, true));
+    setStatus(`Deleted post “${relativePath}”`);
   });
 
   window.api.onRequestSave(() => saveCurrent(false));

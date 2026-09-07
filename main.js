@@ -21,6 +21,7 @@ const {
   createHugoFrontMatter,
   isValidPostName,
   listHugoPosts,
+  resolveHugoPostDirectory,
   resolveHugoPostPath
 } = require('./lib/hugo-project');
 const { buildImageShortcode, buildMogrifyArgs, isGifPath, reserveImagePaths } = require('./lib/image-processing');
@@ -205,6 +206,97 @@ function openHugoPost(projectPath, relativePath, remember = true) {
   return { ok: true, filePath: postPath };
 }
 
+function isPathInDirectory(filePath, directoryPath) {
+  const resolvedFile = path.resolve(filePath);
+  const resolvedDirectory = path.resolve(directoryPath);
+  return resolvedFile === resolvedDirectory || resolvedFile.startsWith(`${resolvedDirectory}${path.sep}`);
+}
+
+function validatedHugoPostDirectory(projectPath, relativePath) {
+  const postsRoot = path.resolve(projectPath, 'content', 'posts');
+  const postDirectory = resolveHugoPostDirectory(projectPath, relativePath);
+  if (!postDirectory || !fs.existsSync(postsRoot) || !fs.statSync(postsRoot).isDirectory()) {
+    throw new Error('The selected post directory could not be found.');
+  }
+  if (!fs.existsSync(postDirectory)) {
+    throw new Error('The selected post directory could not be found.');
+  }
+  const postDirectoryStat = fs.lstatSync(postDirectory);
+  if (postDirectoryStat.isSymbolicLink()) {
+    throw new Error('Linked post directories cannot be deleted from Almost Editor.');
+  }
+  if (!postDirectoryStat.isDirectory()) throw new Error('The selected post directory could not be found.');
+  const realPostsRoot = fs.realpathSync(postsRoot);
+  const realPostDirectory = fs.realpathSync(postDirectory);
+  if (!isPathInDirectory(realPostDirectory, realPostsRoot) || realPostDirectory === realPostsRoot) {
+    throw new Error('The selected post is outside content/posts.');
+  }
+  const indexPath = path.join(realPostDirectory, 'index.md');
+  if (!fs.existsSync(indexPath) || !fs.statSync(indexPath).isFile()) {
+    throw new Error('The selected directory is no longer a Hugo post bundle.');
+  }
+  return postDirectory;
+}
+
+async function confirmAndDeleteHugoPost(projectPath, relativePath, hasUnsavedChanges) {
+  try {
+    let postDirectory = validatedHugoPostDirectory(projectPath, relativePath);
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      buttons: ['Cancel', 'Delete'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: 'Delete Blog Post',
+      message: `Delete “${relativePath}”?`,
+      detail: `${hasUnsavedChanges ? 'This post has unsaved changes. ' : ''}This permanently deletes the post directory and every file inside it. This cannot be undone.`
+    });
+    if (result.response !== 1 || !mainWindow || mainWindow.isDestroyed()) return;
+
+    // Revalidate after the confirmation window in case the directory changed
+    // while it was open.
+    postDirectory = validatedHugoPostDirectory(projectPath, relativePath);
+    fs.rmSync(postDirectory, { recursive: true });
+
+    for (const filePath of authorizedFiles.keys()) {
+      if (isPathInDirectory(filePath, postDirectory)) authorizedFiles.delete(filePath);
+    }
+    const deletedCurrentPost = Boolean(currentFilePath && isPathInDirectory(currentFilePath, postDirectory));
+    if (deletedCurrentPost) currentFilePath = null;
+
+    const cfg = loadConfig();
+    const lastPostDirectory = cfg.lastHugoProject === projectPath && cfg.lastHugoPost
+      ? resolveHugoPostDirectory(projectPath, cfg.lastHugoPost) : null;
+    try {
+      saveConfig({
+        ...cfg,
+        lastOpenedDirectory: typeof cfg.lastOpenedDirectory === 'string' &&
+          isPathInDirectory(cfg.lastOpenedDirectory, postDirectory)
+          ? path.join(projectPath, 'content', 'posts') : cfg.lastOpenedDirectory,
+        lastHugoPost: lastPostDirectory && isPathInDirectory(lastPostDirectory, postDirectory)
+          ? null : cfg.lastHugoPost
+      });
+    } catch (error) {
+      // The post is already deleted; a preference write must not prevent the
+      // renderer from reflecting that successful filesystem change.
+      console.error('Could not update preferences after deleting a post:', error);
+    }
+
+    const posts = listHugoPosts(projectPath);
+    mainWindow.webContents.send('hugo-post-deleted', {
+      projectPath,
+      relativePath,
+      postDirectory,
+      posts,
+      deletedCurrentPost
+    });
+  } catch (error) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      dialog.showErrorBox('Could not delete blog post', error.message);
+    }
+  }
+}
+
 function restoreLastSession() {
   const { lastHugoProject, lastHugoPost } = loadConfig();
   try {
@@ -338,6 +430,26 @@ handle('create-hugo-post', (event, { projectPath, name }) => {
     return { ok: true, filePath: indexPath };
   } catch (error) {
     return { ok: false, error: `Could not create post: ${error.message}` };
+  }
+});
+
+handle('show-hugo-post-context-menu', (event, payload) => {
+  if (closePending || !payload || typeof payload !== 'object') return { ok: false };
+  const { projectPath, relativePath, hasUnsavedChanges = false } = payload;
+  if (!authorizedProjects.has(projectPath) || typeof relativePath !== 'string' ||
+      typeof hasUnsavedChanges !== 'boolean') {
+    return { ok: false, error: 'Invalid project or post.' };
+  }
+  try {
+    validatedHugoPostDirectory(projectPath, relativePath);
+    const menu = Menu.buildFromTemplate([{
+      label: 'Delete Post…',
+      click: () => { void confirmAndDeleteHugoPost(projectPath, relativePath, hasUnsavedChanges); }
+    }]);
+    menu.popup({ window: mainWindow });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error.message };
   }
 });
 
