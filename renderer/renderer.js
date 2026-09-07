@@ -5,6 +5,7 @@ import {
   insertMarkdownBlock,
   wrapMarkdownSelection
 } from './markdown-editing.mjs';
+import { dirtyDocumentsForClose } from './document-state.mjs';
 import { expandHugoRefLinks, titleFromFrontMatter, withoutHugoFrontMatter } from './markdown-tools.mjs';
 
 const editorPane = document.getElementById('editor-pane');
@@ -67,6 +68,7 @@ let hugoProjectPath = null;
 let currentProjectPostName = null;
 let hugoPosts = [];
 let pendingLinkSelection = null;
+let windowCloseInProgress = false;
 const openDocuments = new Map([
   ['__untitled__', { savedContent: '', content: '', dirty: false }]
 ]);
@@ -741,6 +743,7 @@ if (window.api) {
 
   window.api.onRequestSave(() => saveCurrent(false));
   window.api.onRequestSaveAs(() => saveCurrent(true));
+  window.api.onRequestWindowClose(handleWindowCloseRequest);
 } else {
   console.error('Electron preload API was not loaded');
   setStatus('File actions unavailable: Electron preload API did not load', true);
@@ -755,7 +758,8 @@ async function saveCurrent(forcePicker) {
   const previousKey = currentDocumentKey;
   const result = await window.api.saveFile({
     content,
-    filePath: forcePicker ? null : currentFilePath
+    filePath: currentFilePath,
+    forcePicker
   });
   if (result.ok) {
     currentFilePath = result.filePath;
@@ -766,6 +770,56 @@ async function saveCurrent(forcePicker) {
     updateHeader();
     setStatus('Saved');
     renderPreview(); // Resolve shortcode image paths once this post has a folder.
+  }
+}
+
+async function saveDirtyDocumentsForClose(dirtyDocuments) {
+  for (const [key, document] of dirtyDocuments) {
+    const isCurrent = key === currentDocumentKey;
+    const result = await window.api.saveFile({
+      content: document.content,
+      filePath: key === '__untitled__' ? null : key,
+      forcePicker: key === '__untitled__',
+      updateCurrentFile: isCurrent
+    });
+    if (!result.ok) return false;
+
+    const savedDocument = { ...document, savedContent: document.content, dirty: false };
+    if (result.filePath !== key) openDocuments.delete(key);
+    openDocuments.set(result.filePath, savedDocument);
+    if (isCurrent) {
+      currentFilePath = result.filePath;
+      currentDocumentKey = result.filePath;
+    }
+  }
+  updateDirtyStatus();
+  updateHeader();
+  return true;
+}
+
+async function handleWindowCloseRequest() {
+  if (windowCloseInProgress) return;
+  windowCloseInProgress = true;
+  try {
+    const dirtyDocuments = dirtyDocumentsForClose(openDocuments, currentDocumentKey);
+    if (!dirtyDocuments.length) {
+      await window.api.finishWindowClose({ close: true });
+      return;
+    }
+
+    const { action } = await window.api.confirmWindowClose({ dirtyCount: dirtyDocuments.length });
+    if (action === 'cancel') return;
+    if (action === 'save' && !(await saveDirtyDocumentsForClose(dirtyDocuments))) {
+      await window.api.finishWindowClose({ close: false });
+      return;
+    }
+    await window.api.finishWindowClose({ close: true });
+  } catch (error) {
+    console.error('Unable to finish closing the window:', error);
+    setStatus('The window could not be closed', true);
+    await window.api.finishWindowClose({ close: false });
+  } finally {
+    windowCloseInProgress = false;
   }
 }
 

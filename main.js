@@ -10,6 +10,8 @@ app.setName('Almost Editor');
 
 let mainWindow;
 let currentFilePath = null; // path of the .md file currently open
+let allowWindowClose = false;
+let isQuitting = false;
 
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
 const DEFAULT_CONFIG = {
@@ -42,6 +44,7 @@ function saveConfig(cfg) {
 }
 
 function createWindow() {
+  allowWindowClose = false;
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 720,
@@ -55,6 +58,7 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   const menu = Menu.buildFromTemplate([
+    ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
     {
       label: 'File',
       submenu: [
@@ -64,18 +68,23 @@ function createWindow() {
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => mainWindow.webContents.send('request-save') },
         { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: () => mainWindow.webContents.send('request-save-as') },
         { type: 'separator' },
-        { role: 'quit' }
+        process.platform === 'darwin' ? { role: 'close' } : { role: 'quit' }
       ]
     },
-    {
-      label: 'Edit',
-      submenu: [
-        { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
-        { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }
-      ]
-    }
+    { role: 'editMenu' },
+    { role: 'windowMenu' }
   ]);
   Menu.setApplicationMenu(menu);
+
+  mainWindow.on('close', (event) => {
+    if (allowWindowClose) return;
+    event.preventDefault();
+    mainWindow.webContents.send('request-window-close');
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
 }
 
 function newFile() {
@@ -190,8 +199,8 @@ ipcMain.handle('create-hugo-post', (event, { projectPath, name }) => {
   }
 });
 
-ipcMain.handle('save-file', async (event, { content, filePath }) => {
-  let targetPath = filePath || currentFilePath;
+ipcMain.handle('save-file', async (event, { content, filePath, forcePicker = false, updateCurrentFile = true }) => {
+  let targetPath = forcePicker ? null : filePath || currentFilePath;
   if (!targetPath) {
     const cfg = loadConfig();
     targetPath = dialog.showSaveDialogSync(mainWindow, {
@@ -201,10 +210,42 @@ ipcMain.handle('save-file', async (event, { content, filePath }) => {
     if (!targetPath) return { ok: false };
   }
   fs.writeFileSync(targetPath, content, 'utf8');
-  currentFilePath = targetPath;
+  if (updateCurrentFile) currentFilePath = targetPath;
   const cfg = loadConfig();
   saveConfig({ ...cfg, lastOpenedDirectory: path.dirname(targetPath) });
   return { ok: true, filePath: targetPath };
+});
+
+ipcMain.handle('confirm-window-close', async (event, { dirtyCount }) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents) return { action: 'cancel' };
+  const count = Number.isInteger(dirtyCount) && dirtyCount > 0 ? dirtyCount : 1;
+  const saveLabel = count === 1 ? 'Save' : 'Save All';
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    buttons: [saveLabel, 'Don’t Save', 'Cancel'],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true,
+    message: count === 1
+      ? 'Do you want to save your changes before closing?'
+      : `Do you want to save changes to ${count} documents before closing?`,
+    detail: 'Your changes will be lost if you don’t save them.'
+  });
+  const action = ['save', 'discard', 'cancel'][result.response] || 'cancel';
+  if (action === 'cancel') isQuitting = false;
+  return { action };
+});
+
+ipcMain.handle('finish-window-close', (event, { close }) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents) return { ok: false };
+  if (!close) {
+    isQuitting = false;
+    return { ok: true };
+  }
+  allowWindowClose = true;
+  if (isQuitting) app.quit();
+  else mainWindow.close();
+  return { ok: true };
 });
 
 function mogrifyImage(inputPath, outputDirectory, resize, quality) {
@@ -303,6 +344,10 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on('before-quit', () => {
+  isQuitting = true;
 });
 
 app.on('window-all-closed', () => {
