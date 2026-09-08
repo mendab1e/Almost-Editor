@@ -22,8 +22,8 @@ test('lists nested Hugo page bundles and skips directories without index.md', (t
   fs.writeFileSync(path.join(posts, 'archive', 'old-post', 'index.md'), '+++\n+++\n');
 
   assert.deepEqual(listHugoPosts(project), [
-    { name: 'archive/old-post', relativePath: 'archive/old-post' },
-    { name: 'film-scanning', relativePath: 'film-scanning' }
+    { name: 'archive/old-post', relativePath: 'archive/old-post', frontMatter: '+++\n+++\n' },
+    { name: 'film-scanning', relativePath: 'film-scanning', frontMatter: '+++\n+++\n' }
   ]);
 });
 

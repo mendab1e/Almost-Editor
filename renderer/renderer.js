@@ -1,3 +1,4 @@
+import { suggestPostDirectory, scrollFraction } from './ui-helpers.mjs';
 import { imageInsertion } from './document-state.mjs';
 import { createMarkdownEditor, sanitizePreview } from './editor.bundle.js';
 import {
@@ -23,7 +24,6 @@ const insertLinkBtn = document.getElementById('insert-link');
 const preview = document.getElementById('preview');
 const panes = document.getElementById('panes');
 const toggleBtn = document.getElementById('toggle-preview');
-const filenameEl = document.getElementById('filename');
 const statusEl = document.getElementById('status');
 const dirtyStatusEl = document.getElementById('dirty-status');
 const themeSelect = document.getElementById('theme-select');
@@ -126,6 +126,7 @@ function scheduleRecovery() {
 }
 
 function activateDocument(key) {
+  hideWelcome();
   const draft = openDocuments.get(key);
   if (!draft) return;
   currentDocumentKey = key;
@@ -174,6 +175,8 @@ async function initializeTheme() {
   fontSizeSelect.value = String(fontSize);
   editor.setFontSize(fontSize);
   applyTheme(themeSelect.value);
+  updateSyncToggle();
+  renderRecentDocuments();
 }
 
 themeSelect.addEventListener('change', async () => {
@@ -209,13 +212,9 @@ systemTheme.addEventListener('change', () => {
 });
 
 function updateHeader() {
-  const title = titleFromFrontMatter(editor.getValue());
-  if (currentProjectPostName) {
-    filenameEl.textContent = title;
-    return;
-  }
-  const filename = currentFilePath ? currentFilePath.split('/').pop() : 'Untitled.md';
-  filenameEl.textContent = title ? `${filename} · ${title}` : filename;
+  const title = titleFromFrontMatter(editor.getValue()) ||
+    (currentFilePath ? currentFilePath.split('/').pop() : 'Untitled');
+  document.title = `Almost Editor – ${title}`;
 }
 
 function handleEditorChange() {
@@ -227,6 +226,7 @@ function handleEditorChange() {
     updateDirtyStatus();
   }
   updateHeader();
+  updatePostTitles();
   scheduleRender();
 }
 
@@ -238,6 +238,7 @@ function updateDirtyStatus() {
   const document = openDocuments.get(currentDocumentKey);
   dirtyStatusEl.classList.toggle('hidden', !document?.dirty);
   updatePostDirtyIndicators();
+  updatePostTitles();
   updateDocumentMenu();
 }
 
@@ -268,6 +269,20 @@ function openDocument(filePath, diskContent) {
 }
 
 function setupHorizontalResizer(handle, getStartWidth, resize) {
+  handle.title = 'Drag or use Left and Right arrow keys to resize';
+  new ResizeObserver(() => {
+    handle.setAttribute('aria-valuemin', '0');
+    handle.setAttribute('aria-valuemax', Math.round(window.innerWidth));
+    handle.setAttribute('aria-valuenow', Math.round(getStartWidth()));
+    handle.setAttribute('aria-valuetext', `${Math.round(getStartWidth())} pixels`);
+  }).observe(handle.parentElement);
+  handle.addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault();
+    resize((event.key === 'ArrowLeft' ? -1 : 1) * (event.shiftKey ? 50 : 10), getStartWidth());
+    handle.setAttribute('aria-valuenow', Math.round(getStartWidth()));
+    handle.setAttribute('aria-valuetext', `${Math.round(getStartWidth())} pixels`);
+  });
   handle.addEventListener('pointerdown', (event) => {
     event.preventDefault();
     const startX = event.clientX;
@@ -297,8 +312,12 @@ setupHorizontalResizer(sidebarResizer, () => sidebarEl.getBoundingClientRect().w
 
 setupHorizontalResizer(previewResizer, () => editorPane.getBoundingClientRect().width, (delta, startWidth) => {
   const usableWidth = panes.getBoundingClientRect().width - previewResizer.getBoundingClientRect().width;
-  const editorWidth = Math.max(240, Math.min(usableWidth - 240, startWidth + delta));
-  editorPane.style.flex = `0 0 ${editorWidth}px`;
+  const minimum = Math.min(240, usableWidth / 2);
+  const editorWidth = Math.max(minimum, Math.min(usableWidth - minimum, startWidth + delta));
+  const share = usableWidth > 0 ? editorWidth / usableWidth : 0.5;
+  const dividerWidth = previewResizer.getBoundingClientRect().width;
+  // Store the chosen proportion, so window and sidebar resizing affect both panes.
+  editorPane.style.flex = `0 0 calc(${share * 100}% - ${share * dividerWidth}px)`;
   preview.style.flex = '1 1 0';
 });
 
@@ -331,7 +350,12 @@ function renderPostList(posts) {
     button.dataset.filePath = `${hugoProjectPath}/content/posts/${post.relativePath}/index.md`;
     const label = document.createElement('span');
     label.className = 'post-entry-label';
-    label.textContent = post.name;
+    const title = document.createElement('span');
+    title.className = 'post-title';
+    title.textContent = titleFromFrontMatter(post.frontMatter || '') || post.name;
+    const directory = document.createElement('small');
+    directory.textContent = post.relativePath;
+    label.append(title, directory);
     const dirty = document.createElement('span');
     dirty.className = 'post-entry-dirty hidden';
     dirty.textContent = '●';
@@ -340,6 +364,7 @@ function renderPostList(posts) {
     postListEl.append(button);
   }
   updatePostDirtyIndicators();
+  updatePostTitles();
 }
 
 function showEmptyProject(projectPath) {
@@ -361,7 +386,10 @@ function showEmptyProject(projectPath) {
 function highlightCurrentPost() {
   postListEl.querySelectorAll('.post-entry').forEach((button) => {
     const expectedEnding = `/content/posts/${button.dataset.postPath}/index.md`;
-    button.classList.toggle('active', Boolean(currentFilePath && currentFilePath.endsWith(expectedEnding)));
+    const active = Boolean(currentFilePath && currentFilePath.endsWith(expectedEnding));
+    button.classList.toggle('active', active);
+    if (active) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
   });
 }
 
@@ -376,7 +404,7 @@ function parseShortcodeAttributes(source) {
   const pattern = /([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s]+))/g;
   let match;
   while ((match = pattern.exec(source))) {
-    attributes[match[1]] = match[2] ?? match[3] ?? match[4] ?? '';
+    attributes[match[1]] = (match[2] ?? match[3] ?? match[4] ?? '').replace(/&(amp|quot|lt|gt);/g, (_, entity) => ({ amp: '&', quot: '"', lt: '<', gt: '>' })[entity]);
   }
   return attributes;
 }
@@ -591,8 +619,11 @@ newPostBtn.addEventListener('click', async () => {
   }
   newPostError.textContent = '';
   newPostName.value = '';
+  document.getElementById('new-post-heading').value = '';
+  directoryEdited = false;
+  updatePostLocation();
   newPostDialog.classList.remove('hidden');
-  newPostName.focus();
+  document.getElementById('new-post-heading').focus();
 });
 
 function closeNewPostDialog() {
@@ -608,7 +639,7 @@ newPostForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const name = newPostName.value.trim();
   if (!name) return;
-  const result = await window.api.createHugoPost({ projectPath: hugoProjectPath, name });
+  const result = await window.api.createHugoPost({ projectPath: hugoProjectPath, name, title: document.getElementById('new-post-heading').value.trim() });
   if (result.ok) {
     closeNewPostDialog();
     return;
@@ -728,7 +759,7 @@ function populateLinkPostOptions() {
   for (const post of hugoPosts) {
     const option = document.createElement('option');
     option.value = post.relativePath;
-    option.textContent = post.name;
+    option.textContent = titleFromFrontMatter(post.frontMatter || '') || post.name;
     linkPostSelect.append(option);
   }
 }
@@ -790,24 +821,25 @@ function insertAtCursor(text) {
   editor.insertAtCursor(text);
 }
 
-function handleImageFile(filePath) {
+function handleImageFile(filePath, alt = '', context = null) {
   if (windowCloseInProgress) return Promise.resolve();
-  const operation = insertImageFile(filePath);
+  const operation = insertImageFile(filePath, alt, context);
   pendingImages.add(operation);
-  operation.finally(() => pendingImages.delete(operation));
+  updateImageProgress();
+  operation.finally(() => { pendingImages.delete(operation); updateImageProgress(); });
   return operation;
 }
 
-async function insertImageFile(filePath) {
+async function insertImageFile(filePath, alt, context) {
   if (!window.api) {
     setStatus('Image processing is unavailable because the Electron API did not load', true);
     return;
   }
-  const originKey = currentDocumentKey;
-  const originalContent = editor.getValue();
-  const position = editor.getSelection().from;
+  const originKey = context?.key || currentDocumentKey;
+  const originalContent = context?.content ?? editor.getValue();
+  const position = context?.position ?? editor.getSelection().from;
   setStatus('Inserting image…');
-  const result = await window.api.processImage({ sourcePath: filePath })
+  const result = await window.api.processImage({ sourcePath: filePath, alt, filePath: context?.filePath || currentFilePath })
     .catch((error) => ({ ok: false, error: error.message || 'Image processing failed' }));
   if (!result.ok) {
     setStatus(result.error, true);
@@ -833,14 +865,21 @@ async function insertImageFile(filePath) {
 }
 
 // --- Drag & drop ---
-document.addEventListener('dragover', (e) => e.preventDefault());
+document.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  if (Array.from(e.dataTransfer.types).includes('Files')) editorPane.classList.add('image-dragging');
+});
+document.addEventListener('dragleave', e => { if (!e.relatedTarget) editorPane.classList.remove('image-dragging'); });
+window.addEventListener('blur', () => editorPane.classList.remove('image-dragging'));
 document.addEventListener('drop', (e) => {
   e.preventDefault();
+  editorPane.classList.remove('image-dragging');
+  if (document.querySelector('.modal:not(.hidden)')) return;
   const files = Array.from(e.dataTransfer.files);
   const imageFile = files.find(f => /\.(png|jpe?g|gif|heic|tiff?|bmp|webp)$/i.test(f.name));
   if (imageFile) {
     const sourcePath = window.api?.getPathForFile(imageFile) || imageFile.path;
-    handleImageFile(sourcePath);
+    promptImage(sourcePath);
   }
 });
 
@@ -854,7 +893,7 @@ editor.onPaste((e) => {
     const sourcePath = file && (window.api?.getPathForFile(file) || file.path);
     if (sourcePath) {
       e.preventDefault();
-      handleImageFile(sourcePath);
+      promptImage(sourcePath);
     }
   }
 });
@@ -884,6 +923,7 @@ if (window.api) {
   });
 
   window.api.onFileOpened(({ filePath, content, projectPath }) => {
+    hideWelcome();
     currentFilePath = filePath;
     if (projectPath) {
       hugoProjectPath = projectPath;
@@ -900,6 +940,8 @@ if (window.api) {
   });
 
   window.api.onProjectOpened(({ projectPath, posts }) => {
+    hideWelcome();
+    document.getElementById('post-search').value = '';
     hugoProjectPath = projectPath;
     hugoPosts = posts;
     workspaceEl.classList.remove('project-closed');
@@ -1011,6 +1053,7 @@ async function handleWindowCloseRequest() {
   if (windowCloseInProgress) return;
   windowCloseInProgress = true;
   workspaceEl.inert = true;
+  document.getElementById('welcome').inert = true;
   document.getElementById('toolbar').inert = true;
   document.activeElement?.blur();
   try {
@@ -1042,6 +1085,7 @@ async function handleWindowCloseRequest() {
     await window.api.finishWindowClose({ close: false });
   } finally {
     workspaceEl.inert = false;
+    document.getElementById('welcome').inert = false;
     document.getElementById('toolbar').inert = false;
     windowCloseInProgress = false;
   }
@@ -1090,3 +1134,237 @@ document.addEventListener('keydown', (e) => {
     }
   }
 });
+
+
+function hideWelcome() {
+  document.body.classList.remove('is-home');
+  document.getElementById('welcome').classList.add('hidden');
+  workspaceEl.classList.remove('hidden');
+}
+async function showWelcome() {
+  document.body.classList.add('is-home');
+  const welcome = document.getElementById('welcome');
+  welcome.classList.remove('hidden');
+  workspaceEl.classList.add('hidden');
+  document.getElementById('welcome-project').focus();
+  try { savedConfig = await window.api.getConfig(); renderRecentDocuments(); }
+  catch { setStatus('Recent documents could not be loaded', true); }
+}
+let recentRenderVersion = 0;
+async function renderRecentDocuments() {
+  const version = ++recentRenderVersion;
+  let entries;
+  try { entries = await window.api.getRecentDocuments(); }
+  catch { entries = savedConfig.recentDocuments || []; }
+  if (version !== recentRenderVersion) return;
+  const list = document.getElementById('recent-documents');
+  list.replaceChildren();
+  for (const entry of entries) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    const name = document.createElement('span');
+    const draft = openDocuments.get(entry.filePath);
+    name.textContent = (draft && titleFromFrontMatter(draft.content)) || entry.title || (entry.filePath.endsWith('/index.md') ? entry.filePath.split('/').at(-2) : entry.filePath.split('/').pop());
+    const location = document.createElement('small');
+    location.textContent = entry.filePath;
+    button.append(name, location);
+    button.title = entry.filePath;
+    button.addEventListener('click', async () => {
+      const result = await window.api.openRecent(entry.filePath);
+      if (!result.ok) setStatus(result.error || 'Could not open document', true);
+    });
+    list.append(button);
+  }
+  if (!list.children.length) list.textContent = 'Documents you open will appear here.';
+}
+document.getElementById('clear-recents').addEventListener('click', async () => {
+  await window.api.clearRecentDocuments();
+  savedConfig.recentDocuments = [];
+  renderRecentDocuments();
+});
+document.getElementById('show-welcome').addEventListener('click', showWelcome);
+document.getElementById('welcome-back').addEventListener('click', () => { hideWelcome(); editor.focus(); });
+document.getElementById('welcome-project').addEventListener('click', () => window.api.openHugoProjectDialog());
+document.getElementById('welcome-file').addEventListener('click', () => window.api.openFileDialog());
+document.getElementById('welcome-new').addEventListener('click', () => window.api.newFile());
+// Session restoration events hide this screen when there is a document or project to resume.
+if (!currentFilePath && !hugoProjectPath && !editor.getValue()) {
+  document.body.classList.add('is-home');
+  document.getElementById('welcome').classList.remove('hidden');
+  workspaceEl.classList.add('hidden');
+}
+
+function updatePostTitles() {
+  for (const button of postListEl.querySelectorAll('.post-entry')) {
+    const draft = openDocuments.get(button.dataset.filePath);
+    if (draft) button.querySelector('.post-title').textContent = titleFromFrontMatter(draft.content) || button.dataset.postPath;
+    button.title = `${button.querySelector('.post-title').textContent} — ${button.dataset.postPath}`;
+  }
+  filterPosts();
+}
+function filterPosts() {
+  const query = document.getElementById('post-search').value.trim().toLocaleLowerCase();
+  let visible = 0;
+  for (const button of postListEl.querySelectorAll('.post-entry')) {
+    button.hidden = !button.textContent.toLocaleLowerCase().includes(query);
+    if (!button.hidden) visible++;
+  }
+  let empty = document.getElementById('post-search-empty');
+  if (!empty) {
+    empty = document.createElement('p'); empty.id = 'post-search-empty';
+    empty.className = 'field-help'; empty.setAttribute('role', 'status'); postListEl.append(empty);
+  }
+  empty.textContent = !visible && query ? 'No matching posts.' : '';
+}
+document.getElementById('post-search').addEventListener('input', filterPosts);
+let directoryEdited = false;
+function updatePostLocation() {
+  document.getElementById('new-post-location').textContent = `${hugoProjectPath}/content/posts/${newPostName.value || '…'}/index.md`;
+}
+document.getElementById('new-post-heading').addEventListener('input', event => {
+  if (!directoryEdited) newPostName.value = suggestPostDirectory(event.target.value);
+  updatePostLocation();
+});
+newPostName.addEventListener('input', () => { directoryEdited = Boolean(newPostName.value); updatePostLocation(); });
+
+let selectedImagePath = null;
+let imageContext = null;
+const imageDialog = document.getElementById('insert-image-dialog');
+function promptImage(filePath) {
+  if (!filePath || windowCloseInProgress) return;
+  if (!currentFilePath) { setStatus('Save your draft before inserting an image.', true); return; }
+  selectedImagePath = filePath;
+  imageContext = { key: currentDocumentKey, filePath: currentFilePath, content: editor.getValue(), position: editor.getSelection().from };
+  document.getElementById('image-selected-name').textContent = filePath.split('/').pop();
+  document.getElementById('image-alt').value = '';
+  imageDialog.classList.remove('hidden');
+  document.getElementById('image-alt').focus();
+}
+function closeImageDialog() { imageDialog.classList.add('hidden'); selectedImagePath = null; editor.focus(); }
+document.getElementById('insert-image').addEventListener('click', async () => {
+  if (!currentFilePath) {
+    if (!(await saveCurrent(true))) return;
+  }
+  promptImage(await window.api.chooseImage());
+});
+document.getElementById('cancel-insert-image').addEventListener('click', closeImageDialog);
+document.getElementById('insert-image-form').addEventListener('submit', event => {
+  event.preventDefault();
+  const filePath = selectedImagePath;
+  const alt = document.getElementById('image-alt').value;
+  const context = imageContext;
+  closeImageDialog();
+  if (filePath) handleImageFile(filePath, alt, context);
+});
+function updateImageProgress() {
+  const progress = document.getElementById('image-progress');
+  progress.classList.toggle('hidden', pendingImages.size === 0);
+  progress.textContent = `Processing ${pendingImages.size} image${pendingImages.size === 1 ? '' : 's'}…`;
+}
+
+const scroller = editorHost.querySelector('.cm-scroller');
+let scrollSource = null;
+let scrollRelease;
+function syncScroll(source, target) {
+  if (!savedConfig.syncScroll || !previewVisible || (scrollSource && scrollSource !== source)) return;
+  scrollSource = source;
+  target.scrollTop = scrollFraction(source) * Math.max(0, target.scrollHeight - target.clientHeight);
+  clearTimeout(scrollRelease);
+  scrollRelease = setTimeout(() => { scrollSource = null; }, 100);
+}
+scroller.addEventListener('scroll', () => syncScroll(scroller, preview), { passive: true });
+preview.addEventListener('scroll', () => syncScroll(preview, scroller), { passive: true });
+preview.addEventListener('load', () => syncScroll(scroller, preview), true);
+function updateSyncToggle() {
+  const enabled = savedConfig.syncScroll === true;
+  const button = document.getElementById('sync-scroll');
+  button.setAttribute('aria-pressed', String(enabled));
+  button.title = enabled ? 'Disable synchronized scrolling' : 'Enable synchronized scrolling';
+}
+document.getElementById('sync-scroll').addEventListener('click', async () => {
+  savedConfig.syncScroll = !savedConfig.syncScroll;
+  updateSyncToggle();
+  syncScroll(scroller, preview);
+  try { await window.api.saveConfig({ syncScroll: savedConfig.syncScroll }); }
+  catch { setStatus('Scroll preference could not be saved', true); }
+});
+
+// Keep modal keyboard focus inside the active dialog and restore the invoking control.
+const modalFocus = new Map();
+for (const modal of document.querySelectorAll('[aria-modal="true"]')) {
+  new MutationObserver(() => {
+    if (modal.classList.contains('hidden')) {
+      const trigger = modalFocus.get(modal);
+      if (trigger?.getClientRects().length) trigger.focus();
+      else if (trigger === imageOptionsBtn) document.getElementById('settings-button').focus();
+      modalFocus.delete(modal);
+    }
+  }).observe(modal, { attributes: true, attributeFilter: ['class'] });
+}
+document.addEventListener('click', event => {
+  for (const modal of document.querySelectorAll('[aria-modal="true"].hidden')) modalFocus.set(modal, event.target.closest('button') || document.activeElement);
+}, true);
+document.addEventListener('keydown', event => {
+  const modal = document.querySelector('[aria-modal="true"]:not(.hidden)');
+  if (!modal) return;
+  if (event.key === 'Escape' && modal === imageDialog) { event.preventDefault(); closeImageDialog(); }
+  if (event.key === 'Tab') {
+    const controls = [...modal.querySelectorAll('button, input, select, textarea, [tabindex="0"]')].filter(el => !el.disabled && el.getClientRects().length);
+    const first = controls[0], last = controls.at(-1);
+    if (event.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) { event.preventDefault(); first?.focus(); }
+  }
+  if ((event.metaKey || event.ctrlKey) && ['b', 'i', 'k', 's'].includes(event.key.toLowerCase())) event.stopImmediatePropagation();
+}, true);
+
+
+// Native popovers handle outside clicks, Escape, and returning focus to the trigger.
+for (const [popoverId, triggerId] of [['settings-popover', 'settings-button'], ['format-popover', 'more-format']]) {
+  const popover = document.getElementById(popoverId);
+  const trigger = document.getElementById(triggerId);
+  popover.addEventListener('beforetoggle', event => {
+    if (event.newState !== 'open') return;
+    const anchor = trigger.getBoundingClientRect();
+    popover.style.top = `${anchor.bottom + 8}px`;
+    popover.style.left = `${Math.max(8, Math.min(anchor.left, window.innerWidth - 272))}px`;
+  });
+}
+document.getElementById('format-popover').addEventListener('click', event => {
+  const button = event.target.closest('button[data-format]');
+  if (!button) return;
+  document.getElementById('format-popover').hidePopover();
+  applyFormat(button.dataset.format);
+});
+imageOptionsBtn.addEventListener('click', () => document.getElementById('settings-popover').hidePopover());
+
+
+// Keep every formatting action visible until its actual width no longer fits.
+const overflowFormats = [...document.querySelectorAll('#format-popover [data-format]')];
+const moreFormatButton = document.getElementById('more-format');
+const formatPopover = document.getElementById('format-popover');
+function layoutFormatToolbar() {
+  if (!formatToolbar.getClientRects().length) return;
+  const focused = document.activeElement;
+  for (const button of overflowFormats) formatToolbar.insertBefore(button, moreFormatButton);
+  moreFormatButton.hidden = false;
+  const styles = getComputedStyle(formatToolbar);
+  const available = formatToolbar.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight);
+  const gap = parseFloat(styles.columnGap) || 0;
+  const fits = (withMore) => {
+    const controls = [...formatToolbar.children].filter(el => withMore || el !== moreFormatButton);
+    return controls.reduce((width, el) => width + el.getBoundingClientRect().width, 0) + gap * (controls.length - 1) <= available;
+  };
+  if (fits(false)) {
+    moreFormatButton.hidden = true;
+    if (formatPopover.matches(':popover-open')) formatPopover.hidePopover();
+  } else {
+    for (const button of [...overflowFormats].reverse()) {
+      if (fits(true)) break;
+      formatPopover.prepend(button);
+    }
+  }
+  if (focused && overflowFormats.includes(focused) && focused.parentElement === formatPopover && !formatPopover.matches(':popover-open')) moreFormatButton.focus();
+}
+new ResizeObserver(layoutFormatToolbar).observe(formatToolbar);
+layoutFormatToolbar();
+updateHeader();

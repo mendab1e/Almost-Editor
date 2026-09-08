@@ -47,6 +47,8 @@ const DEFAULT_CONFIG = {
   imageShortcodeTemplate: '{{< lightbox src="{src}" thumb="{thumb}" alt="{alt}" >}}',
   theme: 'system',
   fontSize: 15,
+  syncScroll: false,
+  recentDocuments: [],
   lastOpenedDirectory: null,
   lastHugoProject: null,
   lastHugoPost: null,
@@ -171,6 +173,7 @@ function openFile() {
   authorizeFile(filePath);
   currentFilePath = filePath;
   saveConfig({ ...cfg, lastOpenedDirectory: path.dirname(filePath) });
+  rememberDocument(filePath);
   mainWindow.webContents.send('file-opened', { filePath, content, projectPath: null });
 }
 
@@ -192,6 +195,7 @@ function openHugoPost(projectPath, relativePath, remember = true) {
   if (!fs.realpathSync(postPath).startsWith(root + path.sep)) return { ok: false, error: 'Post is outside content/posts.' };
   const content = fs.readFileSync(postPath, 'utf8');
   authorizeFile(postPath);
+  rememberDocument(postPath, projectPath);
   currentFilePath = postPath;
   if (remember) {
     const cfg = loadConfig();
@@ -375,8 +379,47 @@ handle('get-config', () => loadConfig());
 
 handle('save-config', (event, cfg) => {
   if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return loadConfig();
-  saveConfig({ ...loadConfig(), ...cfg });
+  const { recentDocuments: ignoredRecents, ...preferences } = cfg;
+  saveConfig({ ...loadConfig(), ...preferences });
   return loadConfig();
+});
+
+function rememberDocument(filePath, projectPath = null) {
+  const cfg = loadConfig();
+  const entries = Array.isArray(cfg.recentDocuments) ? cfg.recentDocuments : [];
+  saveConfig({ ...cfg, recentDocuments: [{ filePath, projectPath }, ...entries.filter(item => item.filePath !== filePath)].slice(0, 8) });
+}
+
+handle('get-recent-documents', async () => {
+  const { titleFromFrontMatter } = await import('./renderer/markdown-tools.mjs');
+  return loadConfig().recentDocuments.map(entry => {
+    try { return { ...entry, title: titleFromFrontMatter(fs.readFileSync(entry.filePath, 'utf8')) }; }
+    catch { return entry; }
+  });
+});
+handle('clear-recent-documents', () => { saveConfig({ ...loadConfig(), recentDocuments: [] }); return { ok: true }; });
+handle('new-file', () => newFile());
+handle('choose-image', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'],
+    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'heic', 'tif', 'tiff', 'bmp', 'webp'] }] });
+  return result.canceled ? null : result.filePaths[0];
+});
+handle('open-recent', (event, filePath) => {
+  if (closePending || typeof filePath !== 'string') return { ok: false };
+  const entry = loadConfig().recentDocuments.find(item => item.filePath === filePath);
+  if (!entry) return { ok: false, error: 'Document is no longer in recent files.' };
+  try {
+    if (entry.projectPath) {
+      sendProjectOpened(entry.projectPath);
+      return openHugoPost(entry.projectPath, path.relative(path.join(entry.projectPath, 'content/posts'), path.dirname(filePath)));
+    }
+    const content = fs.readFileSync(filePath, 'utf8');
+    authorizeFile(filePath);
+    currentFilePath = filePath;
+    rememberDocument(filePath);
+    mainWindow.webContents.send('file-opened', { filePath, content, projectPath: null });
+    return { ok: true };
+  } catch (error) { return { ok: false, error: `Could not open document: ${error.message}` }; }
 });
 
 handle('open-file-dialog', () => {
@@ -390,9 +433,10 @@ handle('open-hugo-post', (event, { projectPath, relativePath }) => (
   openHugoPost(projectPath, relativePath)
 ));
 
-handle('create-hugo-post', (event, { projectPath, name }) => {
+handle('create-hugo-post', (event, { projectPath, name, title }) => {
   if (closePending) return { ok: false };
   if (!authorizedProjects.has(projectPath) || typeof name !== 'string') return { ok: false, error: 'Invalid project or name.' };
+  if (title !== undefined && (typeof title !== 'string' || !title.trim())) return { ok: false, error: 'Enter a post title.' };
   const postName = name.trim();
   if (!isValidPostName(postName)) {
     return { ok: false, error: 'Enter a valid post directory name without path separators.' };
@@ -410,7 +454,7 @@ handle('create-hugo-post', (event, { projectPath, name }) => {
 
   const now = new Date();
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  const frontMatter = createHugoFrontMatter(postName, date);
+  const frontMatter = createHugoFrontMatter(title?.trim() || postName, date);
 
   try {
     fs.mkdirSync(path.join(postDirectory, 'images'), { recursive: true });
@@ -425,6 +469,7 @@ handle('create-hugo-post', (event, { projectPath, name }) => {
       lastHugoProject: projectPath,
       lastHugoPost: postName
     });
+    rememberDocument(indexPath, projectPath);
     sendProjectOpened(projectPath);
     mainWindow.webContents.send('file-opened', { filePath: indexPath, content: frontMatter, projectPath });
     return { ok: true, filePath: indexPath };
@@ -524,7 +569,10 @@ handle('save-file', (event, { content, filePath, expectedContent, forcePicker = 
     }
     const cfg = loadConfig();
     // A preferences write failure must not misreport a successful document save.
-    try { saveConfig({ ...cfg, lastOpenedDirectory: path.dirname(targetPath) }); }
+    try {
+      saveConfig({ ...cfg, lastOpenedDirectory: path.dirname(targetPath) });
+      rememberDocument(targetPath, cfg.recentDocuments.find(item => item.filePath === targetPath)?.projectPath);
+    }
     catch (error) { console.error('Could not remember save directory:', error); }
     return { ok: true, filePath: targetPath };
   } catch (error) { return { ok: false, error: error.message }; }
@@ -579,17 +627,19 @@ function mogrifyImage(inputPath, outputDirectory, resize, quality) {
 
 // Process a dropped/pasted image into a full image and thumbnail, then return
 // the configured image shortcode to insert at the cursor.
-handle('process-image', async (event, { sourcePath }) => {
+handle('process-image', async (event, { sourcePath, alt = '', filePath = currentFilePath }) => {
+  if (typeof alt !== 'string' || alt.length > 2000) return { ok: false, error: 'Invalid alternative text.' };
+  alt = alt.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/[\r\n]/g, ' ');
   if (typeof sourcePath !== 'string' || !sourcePath) {
     return { ok: false, error: 'Could not read the dropped image path.' };
   }
   const cfg = loadConfig();
 
-  if (!currentFilePath || !validFile(currentFilePath)) {
+  if (typeof filePath !== 'string' || !validFile(filePath)) {
     return { ok: false, error: 'Save your Markdown file first, so images have a folder to live next to.' };
   }
 
-  const postDir = path.dirname(currentFilePath);
+  const postDir = path.dirname(filePath);
   if (typeof cfg.imagesSubdir !== 'string' || path.isAbsolute(cfg.imagesSubdir) || cfg.imagesSubdir.split(/[\\/]/).includes('..')) return { ok: false, error: 'Invalid image directory.' };
   const imagesDir = path.join(postDir, cfg.imagesSubdir);
   if (!fs.existsSync(imagesDir)) fs.mkdirSync(imagesDir, { recursive: true });
@@ -612,7 +662,7 @@ handle('process-image', async (event, { sourcePath }) => {
         ok: true,
         tag: buildImageShortcode(
           cfg.imageShortcodeTemplate || DEFAULT_CONFIG.imageShortcodeTemplate,
-          { src, thumb: src, alt: '' }
+          { src, thumb: src, alt }
         )
       };
     } catch (error) {
@@ -646,7 +696,7 @@ handle('process-image', async (event, { sourcePath }) => {
       ok: true,
       tag: buildImageShortcode(
         cfg.imageShortcodeTemplate || DEFAULT_CONFIG.imageShortcodeTemplate,
-        { src, thumb, alt: '' }
+        { src, thumb, alt }
       )
     };
   } catch (error) {

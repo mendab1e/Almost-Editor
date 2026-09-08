@@ -8,8 +8,17 @@
 </head>
 <body>
   <div id="toolbar">
-    <span id="filename">Untitled.md</span>
+    <div class="app-navigation"><button id="show-welcome" type="button">Home</button><span id="home-brand">Almost Editor</span></div>
     <div id="toolbar-right">
+      <button id="open-project" type="button">Open project</button>
+      <div id="view-controls" role="group" aria-label="View controls"><button id="sync-scroll" type="button" aria-label="Sync editor and preview" aria-pressed="false" title="Enable synchronized scrolling"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7h-5m5 0V2M4 17h5m-5 0v5M20 7a9 9 0 0 0-15-2M4 17a9 9 0 0 0 15 2"/></svg></button>
+      <button id="toggle-preview" type="button" aria-label="Hide preview" title="Hide preview">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Zm9.5 3.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="m3 3 18 18"/></svg>
+      </button>
+      </div><button id="settings-button" type="button" popovertarget="settings-popover">Settings</button>
+    </div>
+  </div>
+  <div id="settings-popover" class="control-popover" popover aria-label="Settings"><h2>Settings</h2>
       <label class="theme-control" for="theme-select">Theme
         <select id="theme-select">
           <option value="system">System</option>
@@ -33,12 +42,12 @@
         </select>
       </label>
       <button id="image-options" type="button">Image options</button>
-      <button id="open-project" type="button">Open project</button>
-      <button id="toggle-preview" type="button" aria-label="Hide preview" title="Hide preview">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Zm9.5 3.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="m3 3 18 18"/></svg>
-      </button>
-    </div>
-  </div>
+</div>
+  <section id="welcome" class="hidden" aria-labelledby="welcome-title">
+    <h1 id="welcome-title">Almost Editor</h1><p>A little space for your next post.</p>
+    <div class="welcome-actions"><button id="welcome-project" type="button" class="primary">Open project</button><button id="welcome-file" type="button">Open file</button><button id="welcome-new" type="button">New draft</button><button id="welcome-back" type="button">Back to editor</button></div>
+    <div class="recent-header"><h2>Recent documents</h2><button id="clear-recents" type="button">Clear recent list</button></div><div id="recent-documents"></div>
+  </section>
   <div id="workspace" class="project-closed">
     <aside id="post-sidebar" aria-label="Hugo posts">
       <div id="post-sidebar-header">
@@ -46,41 +55,43 @@
         <button id="new-post" type="button">New post</button>
       </div>
       <div id="project-name">No Hugo project open</div>
+      <input id="post-search" type="search" aria-label="Search posts" placeholder="Search posts…">
       <nav id="post-list"></nav>
     </aside>
-    <div id="sidebar-resizer" class="split-resizer" role="separator" aria-label="Resize post sidebar" aria-orientation="vertical"></div>
+    <div id="sidebar-resizer" class="split-resizer" tabindex="0" role="separator" aria-label="Resize post sidebar" aria-orientation="vertical"></div>
     <div id="panes">
       <section id="editor-pane" aria-label="Markdown editor pane">
         <div id="format-toolbar" role="toolbar" aria-label="Markdown formatting">
           <select id="block-style" aria-label="Text style" title="Text style">
-            <option value="" selected disabled>Text style</option>
+            <option value="" selected disabled>Style</option>
             <option value="paragraph">Paragraph</option>
             <option value="h1">Heading 1</option>
             <option value="h2">Heading 2</option>
             <option value="h3">Heading 3</option>
           </select>
-          <span class="format-separator" aria-hidden="true"></span>
-          <button type="button" data-format="bold" aria-label="Bold" title="Bold (⌘B)"><strong>B</strong></button>
-          <button type="button" data-format="italic" aria-label="Italic" title="Italic (⌘I)"><em>I</em></button>
-          <button type="button" data-format="strikethrough" aria-label="Strikethrough" title="Strikethrough"><s>S</s></button>
-          <button type="button" data-format="code" aria-label="Inline code" title="Inline code"><code>&lt;/&gt;</code></button>
+          <button type="button" data-format="bold" aria-label="Bold" title="Bold (⌘B)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h6a4 4 0 0 1 0 8H6z M6 12h7a4 4 0 0 1 0 8H6z"/></svg></button>
+          <button type="button" data-format="italic" aria-label="Italic" title="Italic (⌘I)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4h10M4 20h10M15 4 9 20"/></svg></button>
+          <button id="insert-image" type="button" aria-label="Insert image" title="Insert image"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg><span class="image-button-label">Image</span></button>
           <button id="insert-link" type="button" aria-label="Insert link" title="Insert link (⌘K)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.6 13.4a4 4 0 0 0 5.7 0l2.1-2.1a4 4 0 0 0-5.7-5.7l-1.2 1.2M13.4 10.6a4 4 0 0 0-5.7 0l-2.1 2.1a4 4 0 0 0 5.7 5.7l1.2-1.2"/></svg>
           </button>
-          <span class="format-separator" aria-hidden="true"></span>
-          <button type="button" data-format="blockquote" aria-label="Block quote" title="Block quote">❯</button>
-          <button type="button" data-format="unordered" aria-label="Bulleted list" title="Bulleted list">•≡</button>
-          <button type="button" data-format="ordered" aria-label="Numbered list" title="Numbered list">1.</button>
-          <button type="button" data-format="task" aria-label="Task list" title="Task list">☑</button>
-          <button type="button" data-format="codeblock" aria-label="Code block" title="Code block"><code>{ }</code></button>
-          <button type="button" data-format="rule" aria-label="Horizontal rule" title="Horizontal rule">―</button>
+          <button id="more-format" type="button" popovertarget="format-popover" aria-label="More formatting" title="More formatting">•••</button>
         </div>
+        <div id="image-progress" role="status" class="hidden"></div><div id="image-drop-hint" aria-hidden="true">Drop an image to insert it</div>
         <div id="editor" aria-label="Markdown editor"></div>
       </section>
-      <div id="preview-resizer" class="split-resizer" role="separator" aria-label="Resize preview" aria-orientation="vertical"></div>
+      <div id="preview-resizer" class="split-resizer" tabindex="0" role="separator" aria-label="Resize preview" aria-orientation="vertical"></div>
       <div id="preview"></div>
     </div>
   </div>
+  <div id="format-popover" class="control-popover format-popover" popover aria-label="More formatting"><button type="button" data-format="strikethrough" aria-label="Strikethrough" title="Strikethrough"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 6c-2-3-10-3-10 2 0 2 3 3 5 4m5 3c1 6-9 7-11 2M3 12h18"/></svg><span>Strikethrough</span></button>
+    <button type="button" data-format="code" aria-label="Inline code" title="Inline code"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18"/></svg><span>Inline code</span></button>
+    <button type="button" data-format="blockquote" aria-label="Block quote" title="Block quote"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h5v7H5zm9 0h5v7h-5zM10 13c0 4-2 5-5 5m14-5c0 4-2 5-5 5"/></svg><span>Block quote</span></button>
+    <button type="button" data-format="unordered" aria-label="Bulleted list" title="Bulleted list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h12M9 12h12M9 18h12M3 6h1M3 12h1M3 18h1"/></svg><span>Bulleted list</span></button>
+    <button type="button" data-format="ordered" aria-label="Numbered list" title="Numbered list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6h11M10 12h11M10 18h11M3 3h2v6M3 9h4M3 15c0-3 4-3 4 0l-4 5h4"/></svg><span>Numbered list</span></button>
+    <button type="button" data-format="task" aria-label="Task list" title="Task list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5h11M10 12h11M10 19h11M2 5l2 2 3-4M2 12l2 2 3-4M2 19l2 2 3-4"/></svg><span>Task list</span></button>
+    <button type="button" data-format="codeblock" aria-label="Code block" title="Code block"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5v18h3M16 3h3v18h-3m-6-12-3 3 3 3m4-6 3 3-3 3"/></svg><span>Code block</span></button>
+    <button type="button" data-format="rule" aria-label="Horizontal rule" title="Horizontal rule"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h18"/></svg><span>Horizontal rule</span></button></div>
   <span id="status" role="status" aria-live="polite"></span>
   <span id="dirty-status" class="hidden" role="status" aria-label="Unsaved changes" title="Unsaved changes"><span aria-hidden="true">●</span></span>
   <div id="preview-lightbox" class="hidden" role="dialog" aria-modal="true" aria-label="Image preview">
@@ -90,13 +101,22 @@
   <div id="new-post-dialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="new-post-title">
     <form id="new-post-form" class="modal-card">
       <h2 id="new-post-title">Create new post</h2>
+      <label for="new-post-heading">Post title</label><input id="new-post-heading" required autocomplete="off">
       <label for="new-post-name">Post directory name</label>
       <input id="new-post-name" name="name" autocomplete="off" required>
+      <p id="new-post-location" class="field-help"></p>
       <p id="new-post-error" class="modal-error" role="alert"></p>
       <div class="modal-actions">
         <button id="cancel-new-post" type="button">Cancel</button>
         <button type="submit">Create Post</button>
       </div>
+    </form>
+  </div>
+  <div id="insert-image-dialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="insert-image-title">
+    <form id="insert-image-form" class="modal-card"><h2 id="insert-image-title">Insert image</h2>
+      <p id="image-selected-name"></p><label for="image-alt">Alternative text</label><input id="image-alt" maxlength="2000">
+      <p class="field-help">Describe the image for readers who cannot see it. Leave empty for decorative images.</p>
+      <div class="modal-actions"><button id="cancel-insert-image" type="button">Cancel</button><button type="submit">Insert image</button></div>
     </form>
   </div>
   <div id="link-dialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="link-dialog-title">

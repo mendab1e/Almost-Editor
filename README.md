@@ -38,11 +38,15 @@ npm test
 
 The suite covers Hugo project discovery, generated post front matter, image-processing command construction, collision-safe image names, document insertion state, and Hugo Markdown preprocessing.
 
-Run the Electron regression checks (requires ImageMagick) with `npm run build && node_modules/.bin/electron scripts/verify-electron.cjs`. They use temporary documents and isolated settings. Run `node_modules/.bin/electron scripts/verify-saving.cjs` for save-race, conflict, untitled-draft, recovery, and discard checks.
+Run the Electron regression checks (requires ImageMagick) with `npm run build && node_modules/.bin/electron scripts/verify-electron.cjs`. They use temporary documents and isolated settings. Run `node_modules/.bin/electron scripts/verify-ui.cjs` for welcome, search, title-first creation, recent documents, keyboard resizing, and scroll-sync checks. Run `node_modules/.bin/electron scripts/verify-saving.cjs` for save-race, conflict, untitled-draft, recovery, and discard checks.
+
+## Getting started
+
+The welcome screen offers **Open project**, **Open file**, and **New draft**, plus the eight most recently opened or saved documents, with post titles above their paths. Use **Home** to return to it without closing your drafts, and **Back to editor** to resume writing. **Clear recent list** removes this history without deleting any files. Existing project and draft recovery still resume automatically at startup.
 
 ## Hugo project workflow
 
-Open the root of a Hugo project with **Open project**. Almost Editor scans `content/posts` for directories containing `index.md` and shows those post bundles in the sidebar.
+Open the root of a Hugo project with **Open project**. Almost Editor scans `content/posts` for directories containing `index.md` and shows those post bundles in the sidebar. Each entry shows its front-matter title above the directory name. Search matches either field, including unsaved title changes.
 
 Select a post to open its `index.md`. The editor keeps unsaved buffers in memory while you move between posts, and marks changed posts with a yellow dot in both the sidebar and bottom status area. Save to write the changes to disk. Closing the window with unsaved buffers prompts you to save all changes, discard them, or cancel closing. When Almost Editor starts again, it restores the last Hugo project and reopens the post that was active when the app closed.
 
@@ -56,7 +60,7 @@ Use the formatting toolbar above the editor for headings, bold, italic, striketh
 
 To link text, select it and choose the link button. Enter a URL directly, or choose **Blog article** and select a page bundle from the current Hugo project. Article links are inserted with Hugo's `ref` convention, for example `[Film scanning]({{< ref "/posts/film_scanning" >}})`.
 
-Use **New post** to create a new page bundle. It prompts for the bundle name and creates:
+Use **New post** to create a new page bundle. Enter a post title; the editor suggests a directory name that you can change and shows the destination before creating the bundle:
 
 ```text
 content/posts/<post-name>/
@@ -98,7 +102,7 @@ Clicking a previewed reference opens the target post in the project sidebar. Ord
 
 ## Image workflow
 
-Drag an image into the editor to create two JPEG files in the current post's `images/` directory using `magick mogrify`:
+Choose **Insert image** in the formatting toolbar, or drag an image into the editor. Enter optional alternative text describing the image, then confirm insertion. An unsaved draft must be saved first; the toolbar action opens the save dialog when needed. A drop highlight and persistent processing indicator show where the image will go and when conversion is underway. The editor creates two JPEG files in the current post's `images/` directory using `magick mogrify`:
 
 | Output | Default resize | Default quality |
 | --- | --- | --- |
@@ -115,11 +119,11 @@ Almost Editor then inserts this default shortcode:
 {{< lightbox src="images/image_name.jpg" thumb="images/image_name_thumb.jpg" alt="" >}}
 ```
 
-Use **Image options** to change the full-size and thumbnail resize dimensions, JPEG quality, and the text inserted after processing an image. The shortcode template supports these placeholders:
+Use **Settings → Image options** to change the full-size and thumbnail resize dimensions, JPEG quality, and the text inserted after processing an image. The shortcode template supports these placeholders:
 
 - `{src}` — generated full-size image path
 - `{thumb}` — generated thumbnail path
-- `{alt}` — alternative text, initially empty
+- `{alt}` — alternative text entered during insertion, empty by default
 
 For example, the default template is:
 
@@ -128,6 +132,12 @@ For example, the default template is:
 ```
 
 The template must contain `{src}`; `{thumb}` and `{alt}` are optional, so standard Markdown such as `![{alt}]({src})` also works. All image options are saved and restored when the app reopens. Resize/quality settings and the shortcode template each have their own reset-to-default button.
+
+## View and keyboard controls
+
+Click the synchronization icon beside the preview toggle to enable **Sync editor and preview** to link editor and preview scrolling in either direction. It is off by default and your choice is remembered. Scrolling follows relative position rather than matching individual paragraphs, so image-heavy posts can differ between panes. Turn it off to scroll independently.
+
+The editor and preview keep their chosen width ratio when you resize the window or sidebar. Pane dividers support dragging or keyboard resizing: Tab to a divider and use Left/Right arrows, holding Shift for larger steps. Dialogs keep keyboard focus inside them and support Escape to close. The formatting toolbar displays its actions on one row and moves only the actions that do not fit into **More formatting (•••)**. Expanding the pane brings those actions back; the three-dot button disappears when everything fits. These popovers close with Escape or a click outside. Theme and text size are available under **Settings**. The window title follows the active document as **Almost Editor – Post title**, including unsaved title edits.
 
 ## Features
 

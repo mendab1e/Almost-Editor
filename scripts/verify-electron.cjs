@@ -48,8 +48,10 @@ app.whenReady().then(async () => {
     const imagePath = path.join(temporary, 'photo.png');
     const magick = ['/opt/homebrew/bin/magick', '/usr/local/bin/magick'].find(fs.existsSync) || 'magick';
     require('child_process').execFileSync(magick, ['-size', '2x2', 'xc:red', imagePath]);
-    const imageOne = await js(`window.api.processImage({sourcePath:${JSON.stringify(imagePath)}})`);
+    const imageOne = await js(`window.api.processImage({sourcePath:${JSON.stringify(imagePath)}, alt:'A \"red\" square & light'})`);
     assert.equal(imageOne.ok, true, imageOne.error);
+    assert(imageOne.tag.includes('alt="A &quot;red&quot; square &amp; light"'));
+    assert.equal((await js(`window.api.processImage({sourcePath:${JSON.stringify(imagePath)}, filePath:'/tmp/unauthorized.md'})`)).ok, false);
     const originalImage = fs.readFileSync(path.join(temporary, 'images', 'photo.jpg'));
     const imageTwo = await js(`window.api.processImage({sourcePath:${JSON.stringify(imagePath)}})`);
     assert.equal(imageTwo.ok, true, imageTwo.error);
@@ -62,7 +64,10 @@ app.whenReady().then(async () => {
     let finish;
     ipcMain.handle('process-image', () => new Promise(resolve => { finish = resolve; }));
     await open(first);
-    await js(`(() => { const transfer = new DataTransfer(); transfer.items.add(new File(['image'], 'photo.png')); document.dispatchEvent(new DragEvent('drop', {dataTransfer:transfer})); })()`);
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [imagePath] });
+    await js(`document.getElementById('insert-image').click()`);
+    await pause(50);
+    await js(`document.getElementById('insert-image-form').requestSubmit()`);
     await pause(50);
     assert.equal(typeof finish, 'function');
     await open(second);

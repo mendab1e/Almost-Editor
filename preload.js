@@ -1,6 +1,11 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
+  getRecentDocuments: () => ipcRenderer.invoke('get-recent-documents'),
+  clearRecentDocuments: () => ipcRenderer.invoke('clear-recent-documents'),
+  newFile: () => ipcRenderer.invoke('new-file'),
+  chooseImage: () => ipcRenderer.invoke('choose-image'),
+  openRecent: (filePath) => ipcRenderer.invoke('open-recent', filePath),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   updateDocumentMenu: (documents) => ipcRenderer.invoke('update-document-menu', documents),
   onActivateDocument: (callback) => ipcRenderer.on('activate-document', (event, key) => callback(key)),
