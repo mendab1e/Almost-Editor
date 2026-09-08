@@ -26,6 +26,15 @@ export function titleFromFrontMatter(text) {
   return value.replace(/\s+#.*$/, '').trim();
 }
 
+export function draftFromFrontMatter(text) {
+  const source = text || '';
+  const match = source.match(/^(---|\+\+\+)[ \t]*\r?\n([\s\S]*?)\r?\n\1[ \t]*(?:\r?\n|$)/);
+  if (!match) return false;
+
+  const draft = match[2].match(/^\s*draft\s*(?::|=)\s*(true|false)\s*(?:#.*)?$/mi);
+  return draft?.[1].toLowerCase() === 'true';
+}
+
 export function expandHugoRefLinks(markdown) {
   return markdown.replace(
     /\[([^\]]+)\]\(\s*\{\{<\s*ref\s+["']([^"']+)["']\s*>\}\}\s*\)/gi,

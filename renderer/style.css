@@ -115,6 +115,9 @@ body.is-resizing { cursor: col-resize; user-select: none; }
   white-space: nowrap;
 }
 .post-entry-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.post-entry-heading { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.post-entry-draft { flex: 0 0 auto; padding: 1px 4px; border: 1px solid currentColor; border-radius: 3px; color: #fdb022; font-size: 9px; font-weight: 700; letter-spacing: .04em; line-height: 1.2; }
+:root[data-theme="light"] .post-entry-draft { color: #b54708; }
 .post-entry-dirty { margin-left: auto; color: #f79009; font-size: 14px; line-height: 1; }
 .post-entry-dirty.hidden { display: none; }
 .post-entry:hover, .post-entry.active { background: var(--control-hover); }
@@ -289,7 +292,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 #post-search { width: calc(100% - 20px); margin: 0 10px 10px; padding: 8px; background: var(--app-bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; }
 .post-entry { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 9px 8px; border-left: 3px solid transparent; }
 .post-entry-label { display: flex; flex-direction: column; gap: 3px; }
-.post-title { overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.post-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
 .post-entry small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; }
 .post-entry.active { background: var(--selected-bg); border-left-color: var(--accent); }
 #format-toolbar { flex-basis: 42px; }

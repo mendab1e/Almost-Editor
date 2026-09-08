@@ -14,7 +14,7 @@ import {
   recoverySnapshot,
   removeDocumentsInDirectory
 } from './document-state.mjs';
-import { expandHugoRefLinks, titleFromFrontMatter, withoutHugoFrontMatter } from './markdown-tools.mjs';
+import { draftFromFrontMatter, expandHugoRefLinks, titleFromFrontMatter, withoutHugoFrontMatter } from './markdown-tools.mjs';
 
 const editorPane = document.getElementById('editor-pane');
 const editorHost = document.getElementById('editor');
@@ -350,12 +350,19 @@ function renderPostList(posts) {
     button.dataset.filePath = `${hugoProjectPath}/content/posts/${post.relativePath}/index.md`;
     const label = document.createElement('span');
     label.className = 'post-entry-label';
+    const heading = document.createElement('span');
+    heading.className = 'post-entry-heading';
     const title = document.createElement('span');
     title.className = 'post-title';
     title.textContent = titleFromFrontMatter(post.frontMatter || '') || post.name;
+    const draft = document.createElement('span');
+    draft.className = 'post-entry-draft';
+    draft.classList.toggle('hidden', !draftFromFrontMatter(post.frontMatter || ''));
+    draft.textContent = 'DRAFT';
     const directory = document.createElement('small');
     directory.textContent = post.relativePath;
-    label.append(title, directory);
+    heading.append(title, draft);
+    label.append(heading, directory);
     const dirty = document.createElement('span');
     dirty.className = 'post-entry-dirty hidden';
     dirty.textContent = '●';
@@ -1197,8 +1204,12 @@ if (!currentFilePath && !hugoProjectPath && !editor.getValue()) {
 function updatePostTitles() {
   for (const button of postListEl.querySelectorAll('.post-entry')) {
     const draft = openDocuments.get(button.dataset.filePath);
-    if (draft) button.querySelector('.post-title').textContent = titleFromFrontMatter(draft.content) || button.dataset.postPath;
-    button.title = `${button.querySelector('.post-title').textContent} — ${button.dataset.postPath}`;
+    if (draft) {
+      button.querySelector('.post-title').textContent = titleFromFrontMatter(draft.content) || button.dataset.postPath;
+      button.querySelector('.post-entry-draft').classList.toggle('hidden', !draftFromFrontMatter(draft.content));
+    }
+    const draftSuffix = button.querySelector('.post-entry-draft').classList.contains('hidden') ? '' : ' (draft)';
+    button.title = `${button.querySelector('.post-title').textContent}${draftSuffix} — ${button.dataset.postPath}`;
   }
   filterPosts();
 }
@@ -1206,7 +1217,8 @@ function filterPosts() {
   const query = document.getElementById('post-search').value.trim().toLocaleLowerCase();
   let visible = 0;
   for (const button of postListEl.querySelectorAll('.post-entry')) {
-    button.hidden = !button.textContent.toLocaleLowerCase().includes(query);
+    const searchableText = `${button.querySelector('.post-title').textContent} ${button.dataset.postPath}`;
+    button.hidden = !searchableText.toLocaleLowerCase().includes(query);
     if (!button.hidden) visible++;
   }
   let empty = document.getElementById('post-search-empty');

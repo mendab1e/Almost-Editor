@@ -46,7 +46,7 @@ The welcome screen offers **Open project**, **Open file**, and **New draft**, pl
 
 ## Hugo project workflow
 
-Open the root of a Hugo project with **Open project**. Almost Editor scans `content/posts` for directories containing `index.md` and shows those post bundles in the sidebar. Each entry shows its front-matter title above the directory name. Search matches either field, including unsaved title changes.
+Open the root of a Hugo project with **Open project**. Almost Editor scans `content/posts` for directories containing `index.md` and shows those post bundles in the sidebar. Each entry shows its front-matter title above the directory name, with a **DRAFT** badge when its YAML or TOML front matter sets `draft` to `true`. Search matches either field, including unsaved title changes.
 
 Select a post to open its `index.md`. The editor keeps unsaved buffers in memory while you move between posts, and marks changed posts with a yellow dot in both the sidebar and bottom status area. Save to write the changes to disk. Closing the window with unsaved buffers prompts you to save all changes, discard them, or cancel closing. When Almost Editor starts again, it restores the last Hugo project and reopens the post that was active when the app closed.
 
