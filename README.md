@@ -40,6 +40,10 @@ The suite covers Hugo project discovery, generated post front matter, image-proc
 
 Run the Electron regression checks (requires ImageMagick) with `npm run build && node_modules/.bin/electron scripts/verify-electron.cjs`. They use temporary documents and isolated settings. Run `node_modules/.bin/electron scripts/verify-ui.cjs` for welcome, search, title-first creation, recent documents, keyboard resizing, and scroll-sync checks. Run `node_modules/.bin/electron scripts/verify-saving.cjs` for save-race, conflict, untitled-draft, recovery, and discard checks.
 
+## Package for macOS
+
+Run `npm run pack:mac` to create an unpacked Apple Silicon app in `dist/mac-arm64`. Run `npm run dist:mac` to create the compressed Apple Silicon DMG; after a successful build, it removes the unpacked staging app to avoid retaining a second copy in `dist`.
+
 ## Getting started
 
 The welcome screen offers **Open project**, **Open file**, and **New draft**, plus the eight most recently opened or saved documents, with post titles above their paths. Use **Home** to return to it without closing your drafts, and **Back to editor** to resume writing. **Clear recent list** removes this history without deleting any files. Existing project and draft recovery still resume automatically at startup.

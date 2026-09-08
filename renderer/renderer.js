@@ -1,6 +1,6 @@
 import { mappedScrollTop, scrollFraction, suggestPostDirectory } from './ui-helpers.mjs';
 import { imageInsertion } from './document-state.mjs';
-import { createMarkdownEditor, sanitizePreview } from './editor.bundle.js';
+import { createMarkdownEditor, marked, sanitizePreview } from './editor.bundle.js';
 import {
   buildMarkdownLink,
   formatMarkdownBlock,
@@ -462,7 +462,7 @@ function expandLightboxShortcodes(markdown, firstSourceLine) {
 
   // Add zero-height anchors before rendered blocks so scroll synchronization
   // can match content even when Markdown and HTML have very different heights.
-  const tokens = window.marked.lexer(expanded, { breaks: false });
+  const tokens = marked.lexer(expanded, { breaks: false });
   const anchoredTokens = [];
   let sourceLine = firstSourceLine;
   for (const token of tokens) {
@@ -480,7 +480,7 @@ function expandLightboxShortcodes(markdown, firstSourceLine) {
 
   // Hugo's Goldmark renderer treats an ordinary source newline as whitespace,
   // not as an HTML <br>. This keeps URLs and other inline Markdown together.
-  let html = window.marked.parser(anchoredTokens, { breaks: false });
+  let html = marked.parser(anchoredTokens, { breaks: false });
   for (const { placeholder, figure } of replacements) {
     html = html.replace(`<p>${placeholder}</p>\n`, figure);
     html = html.replace(placeholder, figure);
@@ -509,9 +509,8 @@ function collectPreviewScrollTargets() {
 
 function renderPreview() {
   try {
-    if (!window.marked) throw new Error('Markdown parser failed to load');
     // Hugo removes front matter before rendering a page. Do the same for the
-    // editor preview, then render with Marked's browser bundle.
+    // editor preview, then render with the bundled Marked parser.
     const { content, startLine } = hugoContent(editor.getValue());
     const markdown = expandHugoRefLinks(content);
     preview.innerHTML = sanitizePreview(expandLightboxShortcodes(markdown, startLine));

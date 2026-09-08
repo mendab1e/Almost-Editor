@@ -1,4 +1,5 @@
 export { sanitizePreview } from './preview-security.js';
+export { marked } from 'marked';
 import { history, historyKeymap, defaultKeymap, indentWithTab } from '@codemirror/commands';
 import { markdown } from '@codemirror/lang-markdown';
 import { syntaxHighlighting, HighlightStyle } from '@codemirror/language';
