@@ -62,6 +62,9 @@
     <div id="panes">
       <section id="editor-pane" aria-label="Markdown editor pane">
         <div id="format-toolbar" role="toolbar" aria-label="Markdown formatting">
+          <button id="toggle-draft" class="post-state-button" type="button" aria-label="Draft post" aria-pressed="false" title="Mark as draft"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h9l5 5v13H5zM14 3v5h5"/><path d="m8.5 17 .6-3 5.8-5.8a1.4 1.4 0 0 1 2 2L11.1 16z"/></svg></button>
+          <button id="insert-featured-image" class="post-state-button" type="button" aria-label="Set featured image" aria-pressed="false" title="Set featured image"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 14.6 9l6 .7-4.4 4.1 1.2 5.9-5.4-3-5.4 3 1.2-5.9-4.4-4.1 6-.7z"/></svg></button>
+          <span class="format-separator" aria-hidden="true"></span>
           <select id="block-style" aria-label="Text style" title="Text style">
             <option value="" selected disabled>Style</option>
             <option value="paragraph">Paragraph</option>
@@ -117,6 +120,15 @@
       <p id="image-selected-name"></p><label for="image-alt">Alternative text</label><input id="image-alt" maxlength="2000">
       <p class="field-help">Describe the image for readers who cannot see it. Leave empty for decorative images.</p>
       <div class="modal-actions"><button id="cancel-insert-image" type="button">Cancel</button><button type="submit">Insert image</button></div>
+    </form>
+  </div>
+  <div id="featured-image-dialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="featured-image-title">
+    <form id="featured-image-form" class="modal-card featured-image-card">
+      <h2 id="featured-image-title">Set featured image</h2>
+      <p class="field-help featured-image-help">Choose an image already inserted in this post.</p>
+      <div id="featured-image-options" class="featured-image-options" role="radiogroup" aria-label="Images in this post"></div>
+      <p id="featured-image-empty" class="featured-image-empty hidden" role="status">There are no images in this post.</p>
+      <div class="modal-actions"><button id="cancel-featured-image" type="button">Cancel</button><button id="confirm-featured-image" type="submit">Set featured image</button></div>
     </form>
   </div>
   <div id="link-dialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="link-dialog-title">

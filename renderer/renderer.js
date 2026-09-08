@@ -14,13 +14,24 @@ import {
   recoverySnapshot,
   removeDocumentsInDirectory
 } from './document-state.mjs';
-import { draftFromFrontMatter, expandHugoRefLinks, hugoContent, titleFromFrontMatter } from './markdown-tools.mjs';
+import {
+  draftFromFrontMatter,
+  draftEdit,
+  expandHugoRefLinks,
+  featuredImageEdit,
+  featuredImageFromFrontMatter,
+  hugoContent,
+  imagesFromMarkdown,
+  titleFromFrontMatter
+} from './markdown-tools.mjs';
 
 const editorPane = document.getElementById('editor-pane');
 const editorHost = document.getElementById('editor');
 const formatToolbar = document.getElementById('format-toolbar');
 const blockStyleSelect = document.getElementById('block-style');
+const toggleDraftBtn = document.getElementById('toggle-draft');
 const insertLinkBtn = document.getElementById('insert-link');
+const insertFeaturedImageBtn = document.getElementById('insert-featured-image');
 const preview = document.getElementById('preview');
 const panes = document.getElementById('panes');
 const toggleBtn = document.getElementById('toggle-preview');
@@ -51,6 +62,12 @@ const linkUrlFields = document.getElementById('link-url-fields');
 const linkPostFields = document.getElementById('link-post-fields');
 const linkError = document.getElementById('link-error');
 const cancelLinkBtn = document.getElementById('cancel-link');
+const featuredImageDialog = document.getElementById('featured-image-dialog');
+const featuredImageForm = document.getElementById('featured-image-form');
+const featuredImageOptions = document.getElementById('featured-image-options');
+const featuredImageEmpty = document.getElementById('featured-image-empty');
+const confirmFeaturedImageBtn = document.getElementById('confirm-featured-image');
+const cancelFeaturedImageBtn = document.getElementById('cancel-featured-image');
 const imageOptionsDialog = document.getElementById('image-options-dialog');
 const imageOptionsForm = document.getElementById('image-options-form');
 const imageResizeInput = document.getElementById('image-resize');
@@ -216,6 +233,17 @@ function updateHeader() {
   const title = titleFromFrontMatter(editor.getValue()) ||
     (currentFilePath ? currentFilePath.split('/').pop() : 'Untitled');
   document.title = `Almost Editor – ${title}`;
+  updateFrontMatterButtons();
+}
+
+function updateFrontMatterButtons() {
+  const content = editor.getValue();
+  const isDraft = draftFromFrontMatter(content);
+  const hasFeaturedImage = Boolean(featuredImageFromFrontMatter(content));
+  toggleDraftBtn.setAttribute('aria-pressed', String(isDraft));
+  toggleDraftBtn.title = isDraft ? 'Mark as published' : 'Mark as draft';
+  insertFeaturedImageBtn.setAttribute('aria-pressed', String(hasFeaturedImage));
+  insertFeaturedImageBtn.title = hasFeaturedImage ? 'Change featured image' : 'Set featured image';
 }
 
 function handleEditorChange() {
@@ -855,6 +883,71 @@ linkForm.addEventListener('submit', (event) => {
   }
 });
 
+function imageLabel(image) {
+  return image.alt || image.src.split(/[\\/]/).pop() || image.src;
+}
+
+function applyFrontMatterEdit(edit) {
+  const selection = editor.getSelection();
+  const delta = edit.insert.length - (edit.to - edit.from);
+  const adjustedPosition = (position) => position <= edit.from ? position : position >= edit.to ? position + delta : edit.from + edit.insert.length;
+  editor.replaceRange(edit.from, edit.to, edit.insert, adjustedPosition(selection.from), adjustedPosition(selection.to));
+}
+
+toggleDraftBtn.addEventListener('click', () => {
+  const isDraft = draftFromFrontMatter(editor.getValue());
+  applyFrontMatterEdit(draftEdit(editor.getValue(), !isDraft));
+  setStatus(isDraft ? 'Post marked as published' : 'Post marked as draft');
+});
+
+function openFeaturedImageDialog() {
+  const content = editor.getValue();
+  const images = imagesFromMarkdown(content);
+  const featuredImage = featuredImageFromFrontMatter(content);
+  const selectedIndex = Math.max(0, images.findIndex((image) => image.src === featuredImage));
+  featuredImageOptions.replaceChildren();
+  for (const [index, image] of images.entries()) {
+    const option = document.createElement('label');
+    option.className = 'featured-image-option';
+    const input = document.createElement('input');
+    input.type = 'radio';
+    input.name = 'featuredImage';
+    input.value = image.src;
+    input.checked = index === selectedIndex;
+    const previewImage = document.createElement('img');
+    previewImage.src = localPreviewUrl(image.previewSrc);
+    previewImage.alt = '';
+    const label = document.createElement('span');
+    label.textContent = imageLabel(image);
+    option.append(input, previewImage, label);
+    featuredImageOptions.append(option);
+  }
+  featuredImageEmpty.classList.toggle('hidden', images.length > 0);
+  confirmFeaturedImageBtn.disabled = images.length === 0;
+  featuredImageDialog.classList.remove('hidden');
+  (featuredImageOptions.querySelector('input') || cancelFeaturedImageBtn).focus();
+}
+
+function closeFeaturedImageDialog() {
+  featuredImageDialog.classList.add('hidden');
+  editor.focus();
+}
+
+insertFeaturedImageBtn.addEventListener('click', openFeaturedImageDialog);
+cancelFeaturedImageBtn.addEventListener('click', closeFeaturedImageDialog);
+featuredImageDialog.addEventListener('click', (event) => {
+  if (event.target === featuredImageDialog) closeFeaturedImageDialog();
+});
+featuredImageForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const imagePath = new FormData(featuredImageForm).get('featuredImage');
+  if (!imagePath) return;
+  const edit = featuredImageEdit(editor.getValue(), imagePath);
+  closeFeaturedImageDialog();
+  applyFrontMatterEdit(edit);
+  setStatus('Featured image set');
+});
+
 function setStatus(msg, isError) {
   statusEl.textContent = msg;
   statusEl.style.color = isError ? '#e06c75' : 'var(--success)';
@@ -1152,6 +1245,10 @@ document.addEventListener('keydown', (e) => {
     closeImageOptions();
     return;
   }
+  if (e.key === 'Escape' && !featuredImageDialog.classList.contains('hidden')) {
+    closeFeaturedImageDialog();
+    return;
+  }
   if (e.key === 'Escape' && !newPostDialog.classList.contains('hidden')) {
     closeNewPostDialog();
     return;
@@ -1166,6 +1263,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (!linkDialog.classList.contains('hidden') || !newPostDialog.classList.contains('hidden') ||
+      !featuredImageDialog.classList.contains('hidden') ||
       !imageOptionsDialog.classList.contains('hidden')) return;
   if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
     const shortcut = e.key.toLowerCase();
@@ -1386,6 +1484,7 @@ document.addEventListener('keydown', event => {
   const modal = document.querySelector('[aria-modal="true"]:not(.hidden)');
   if (!modal) return;
   if (event.key === 'Escape' && modal === imageDialog) { event.preventDefault(); closeImageDialog(); }
+  if (event.key === 'Escape' && modal === featuredImageDialog) { event.preventDefault(); closeFeaturedImageDialog(); }
   if (event.key === 'Tab') {
     const controls = [...modal.querySelectorAll('button, input, select, textarea, [tabindex="0"]')].filter(el => !el.disabled && el.getClientRects().length);
     const first = controls[0], last = controls.at(-1);

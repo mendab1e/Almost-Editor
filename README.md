@@ -58,6 +58,8 @@ Unsaved drafts are also stored separately in `draft-recovery.json` in the app's 
 
 Use the formatting toolbar above the editor for headings, bold, italic, strikethrough, inline and fenced code, block quotes, bulleted, numbered, and task lists, links, and horizontal rules. Bold, italic, and link insertion are also available with <kbd>Cmd/Ctrl+B</kbd>, <kbd>Cmd/Ctrl+I</kbd>, and <kbd>Cmd/Ctrl+K</kbd>.
 
+Use the **Draft** button at the start of the formatting toolbar to toggle the current post's `draft` front-matter value. The button stays highlighted while the post is a draft. The adjacent **Set featured image** button chooses from images already inserted in the current post and stays highlighted when `featured_image` is set. Almost Editor updates TOML or YAML front matter appropriately. If the post has no inserted images, the picker says so and leaves the action disabled.
+
 To link text, select it and choose the link button. Enter a URL directly, or choose **Blog article** and select a page bundle from the current Hugo project. Article links are inserted with Hugo's `ref` convention, for example `[Film scanning]({{< ref "/posts/film_scanning" >}})`.
 
 Use **New post** to create a new page bundle. Enter a post title; the editor suggests a directory name that you can change and shows the destination before creating the bundle:

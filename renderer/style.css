@@ -162,6 +162,8 @@ body.is-resizing { cursor: col-resize; user-select: none; }
   border-color: var(--border);
 }
 #format-toolbar button:hover, #format-toolbar button:focus-visible { background: var(--control-hover); border-color: var(--border); }
+#format-toolbar .post-state-button[aria-pressed="true"] { color: var(--accent); background: var(--selected-bg); border-color: var(--accent); }
+#format-toolbar #insert-featured-image[aria-pressed="true"] svg { fill: currentColor; }
 #format-toolbar button:focus-visible, #format-toolbar select:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
 #format-toolbar button code { font: 11px/1 "SF Mono", Menlo, monospace; }
 #format-toolbar button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; vertical-align: middle; }
@@ -229,6 +231,21 @@ body.is-resizing { cursor: col-resize; user-select: none; }
 .link-target-options label { display: flex; align-items: center; gap: 6px; margin: 0; }
 .link-target-options input { width: auto; margin: 0; }
 #link-url-fields.hidden, #link-post-fields.hidden { display: none; }
+.featured-image-card { width: min(520px, 100%); }
+.featured-image-help { margin-bottom: 12px; }
+.featured-image-options { display: grid; gap: 8px; max-height: min(420px, 55vh); overflow-y: auto; }
+.featured-image-option {
+  display: grid !important; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 12px;
+  margin: 0 !important; padding: 8px; border: 1px solid var(--border); border-radius: 7px; cursor: pointer;
+}
+.featured-image-option:hover { background: var(--control-hover); }
+.featured-image-option:has(input:checked) { border-color: var(--accent); background: var(--selected-bg); }
+.featured-image-option:has(input:focus-visible) { outline: 2px solid #2563eb; outline-offset: 1px; }
+.featured-image-option input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.featured-image-option img { width: 64px; height: 48px; border-radius: 4px; background: var(--app-bg); object-fit: cover; }
+.featured-image-option span { min-width: 0; overflow-wrap: anywhere; }
+.featured-image-empty { margin: 20px 0 4px; color: var(--muted); text-align: center; }
+.featured-image-empty.hidden { display: none; }
 .image-options-card { width: min(520px, 100%); }
 .image-options-section + .image-options-section { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
 .image-options-section-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
