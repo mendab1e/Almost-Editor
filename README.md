@@ -5,7 +5,7 @@ Almost Editor is a desktop Markdown editor tailored to [Hugo](https://gohugo.io)
 This project is vibecoded. I built it to write posts for my blog, https://blog.almostinfocus.com.
 While Markdown files can be edited anywhere, manually converting images and inserting shortcodes was always cumbersome.
 
-![UI](https://github.com/user-attachments/assets/97b29e15-0b35-44e5-97b1-948cc2ef64b9)
+![Almost Editor showing a Hugo post](docs/almost-editor.png)
 
 
 ## Requirements
