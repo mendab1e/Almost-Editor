@@ -90,6 +90,13 @@ app.whenReady().then(async () => {
     await pause(250);
     const fraction = await js(`(() => { const p = document.getElementById('preview'); return p.scrollTop / (p.scrollHeight - p.clientHeight); })()`);
     assert(Math.abs(fraction - .5) < .08, `Preview fraction: ${fraction}`);
+    await js(`document.getElementById('preview').scrollTop = 0`);
+    await pause(250);
+    const editorAtPreviewStart = await js(`document.querySelector('.cm-scroller').scrollTop`);
+    assert(editorAtPreviewStart > 80, `Preview start should align after front matter: ${editorAtPreviewStart}`);
+    await js(`document.querySelector('.cm-scroller').scrollTop = 0`);
+    await pause(250);
+    assert.equal(await js(`document.getElementById('preview').scrollTop`), 0);
     assert.equal((await js(`window.api.getConfig()`)).syncScroll, true);
     await js(`document.getElementById('new-post').click(); const title = document.getElementById('new-post-heading'); title.value = 'Café in Berlin'; title.dispatchEvent(new Event('input'))`);
     assert.equal(await js(`document.getElementById('new-post-name').value`), 'cafe-in-berlin');

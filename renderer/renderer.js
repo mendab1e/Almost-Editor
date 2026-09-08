@@ -1,4 +1,4 @@
-import { suggestPostDirectory, scrollFraction } from './ui-helpers.mjs';
+import { mappedScrollTop, scrollFraction, suggestPostDirectory } from './ui-helpers.mjs';
 import { imageInsertion } from './document-state.mjs';
 import { createMarkdownEditor, sanitizePreview } from './editor.bundle.js';
 import {
@@ -14,7 +14,7 @@ import {
   recoverySnapshot,
   removeDocumentsInDirectory
 } from './document-state.mjs';
-import { draftFromFrontMatter, expandHugoRefLinks, titleFromFrontMatter, withoutHugoFrontMatter } from './markdown-tools.mjs';
+import { draftFromFrontMatter, expandHugoRefLinks, hugoContent, titleFromFrontMatter } from './markdown-tools.mjs';
 
 const editorPane = document.getElementById('editor-pane');
 const editorHost = document.getElementById('editor');
@@ -70,6 +70,7 @@ let currentFilePath = null;
 let currentDocumentKey = `draft:${crypto.randomUUID()}`;
 let previewVisible = true;
 let renderDebounce = null;
+let previewScrollTargets = [];
 let savedConfig = { theme: 'system', fontSize: 15 };
 let hugoProjectPath = null;
 let currentProjectPostName = null;
@@ -416,7 +417,7 @@ function parseShortcodeAttributes(source) {
   return attributes;
 }
 
-function expandLightboxShortcodes(markdown) {
+function expandLightboxShortcodes(markdown, firstSourceLine) {
   const replacements = [];
   const expanded = markdown.replace(/\{\{<\s*lightbox\b([^\n]*?)>\}\}/gi, (shortcode, attributeText) => {
     const attributes = parseShortcodeAttributes(attributeText);
@@ -431,9 +432,27 @@ function expandLightboxShortcodes(markdown) {
     return placeholder;
   });
 
+  // Add zero-height anchors before rendered blocks so scroll synchronization
+  // can match content even when Markdown and HTML have very different heights.
+  const tokens = window.marked.lexer(expanded, { breaks: false });
+  const anchoredTokens = [];
+  let sourceLine = firstSourceLine;
+  for (const token of tokens) {
+    if (token.type !== 'space' && token.type !== 'def') {
+      anchoredTokens.push({
+        type: 'html',
+        raw: '',
+        block: true,
+        text: `<span class="preview-scroll-anchor" data-source-line="${sourceLine}"></span>`
+      });
+    }
+    anchoredTokens.push(token);
+    sourceLine += token.raw?.match(/\n/g)?.length || 0;
+  }
+
   // Hugo's Goldmark renderer treats an ordinary source newline as whitespace,
   // not as an HTML <br>. This keeps URLs and other inline Markdown together.
-  let html = window.marked.parse(expanded, { breaks: false });
+  let html = window.marked.parser(anchoredTokens, { breaks: false });
   for (const { placeholder, figure } of replacements) {
     html = html.replace(`<p>${placeholder}</p>\n`, figure);
     html = html.replace(placeholder, figure);
@@ -447,14 +466,30 @@ function localPreviewUrl(source) {
   return new URL(source, `file://${postDir}/`).href;
 }
 
+function collectPreviewScrollTargets() {
+  const targets = new Map();
+  const anchors = [...preview.querySelectorAll('.preview-scroll-anchor[data-source-line]')];
+  for (const anchor of anchors) {
+    let element = anchor.nextElementSibling;
+    while (element?.classList.contains('preview-scroll-anchor')) element = element.nextElementSibling;
+    const sourceLine = Number(anchor.dataset.sourceLine);
+    if (element && Number.isInteger(sourceLine)) targets.set(element, sourceLine);
+    anchor.remove();
+  }
+  previewScrollTargets = [...targets].map(([element, sourceLine]) => ({ element, sourceLine }));
+}
+
 function renderPreview() {
   try {
     if (!window.marked) throw new Error('Markdown parser failed to load');
     // Hugo removes front matter before rendering a page. Do the same for the
     // editor preview, then render with Marked's browser bundle.
-    const markdown = expandHugoRefLinks(withoutHugoFrontMatter(editor.getValue()));
-    preview.innerHTML = sanitizePreview(expandLightboxShortcodes(markdown));
+    const { content, startLine } = hugoContent(editor.getValue());
+    const markdown = expandHugoRefLinks(content);
+    preview.innerHTML = sanitizePreview(expandLightboxShortcodes(markdown, startLine));
+    collectPreviewScrollTargets();
   } catch (error) {
+    previewScrollTargets = [];
     console.error('Unable to render Markdown preview:', error);
     preview.textContent = `Preview error: ${error.message}`;
     setStatus('Preview could not be rendered', true);
@@ -472,6 +507,8 @@ function renderPreview() {
       if (source) element.setAttribute(attribute, localPreviewUrl(source));
     });
   }
+
+  if (savedConfig.syncScroll) syncScroll(scroller, preview);
 }
 
 // Debounce so we're not re-rendering on every single keystroke in a long post
@@ -1277,10 +1314,39 @@ function updateImageProgress() {
 const scroller = editorHost.querySelector('.cm-scroller');
 let scrollSource = null;
 let scrollRelease;
+function contentScrollAnchors() {
+  if (!previewScrollTargets.length) return [];
+
+  const editorMaximum = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  const previewMaximum = Math.max(0, preview.scrollHeight - preview.clientHeight);
+  const previewOrigin = previewScrollTargets[0].element.offsetTop;
+  const anchors = previewScrollTargets.map(({ element, sourceLine }) => ({
+    editor: Math.min(editorMaximum, editor.scrollTopForLine(sourceLine)),
+    preview: Math.min(previewMaximum, Math.max(0, element.offsetTop - previewOrigin))
+  }));
+
+  const last = anchors.at(-1);
+  if (!last || last.editor < editorMaximum || last.preview < previewMaximum) {
+    anchors.push({ editor: editorMaximum, preview: previewMaximum });
+  }
+  return anchors;
+}
+
 function syncScroll(source, target) {
   if (!savedConfig.syncScroll || !previewVisible || (scrollSource && scrollSource !== source)) return;
   scrollSource = source;
-  target.scrollTop = scrollFraction(source) * Math.max(0, target.scrollHeight - target.clientHeight);
+  const anchors = contentScrollAnchors();
+  if (anchors.length) {
+    const editorIsSource = source === scroller;
+    target.scrollTop = mappedScrollTop(
+      source.scrollTop,
+      anchors,
+      editorIsSource ? 'editor' : 'preview',
+      editorIsSource ? 'preview' : 'editor'
+    );
+  } else {
+    target.scrollTop = scrollFraction(source) * Math.max(0, target.scrollHeight - target.clientHeight);
+  }
   clearTimeout(scrollRelease);
   scrollRelease = setTimeout(() => { scrollSource = null; }, 100);
 }

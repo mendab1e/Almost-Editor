@@ -1603,6 +1603,7 @@ function sanitizePreview(html3) {
   return purify.sanitize(html3, {
     ALLOWED_TAGS: [
       "p",
+      "span",
       "br",
       "hr",
       "h1",
@@ -1648,7 +1649,8 @@ function sanitizePreview(html3) {
       "checked",
       "disabled",
       "loading",
-      "data-editor-lightbox"
+      "data-editor-lightbox",
+      "data-source-line"
     ],
     ALLOW_DATA_ATTR: false,
     ALLOWED_URI_REGEXP: /^(?:(?:https?|file|hugo-ref):|[^:]*$)/i
@@ -26869,6 +26871,11 @@ function createMarkdownEditor(parent, onChange) {
   return {
     getValue,
     setValue,
+    scrollTopForLine(lineNumber) {
+      const number2 = Math.max(1, Math.min(view.state.doc.lines, lineNumber));
+      const line = view.state.doc.line(number2);
+      return view.documentPadding.top + view.lineBlockAt(line.from).top;
+    },
     getSelection() {
       const range = view.state.selection.main;
       return { from: range.from, to: range.to, text: view.state.sliceDoc(range.from, range.to) };

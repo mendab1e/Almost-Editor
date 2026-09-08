@@ -1,7 +1,14 @@
-export function withoutHugoFrontMatter(text) {
+export function hugoContent(text) {
   const source = text || '';
   const match = source.match(/^(---|\+\+\+)[ \t]*\r?\n[\s\S]*?\r?\n\1[ \t]*(?:\r?\n|$)/);
-  return match ? source.slice(match[0].length) : source;
+  return {
+    content: match ? source.slice(match[0].length) : source,
+    startLine: match ? (match[0].match(/\n/g)?.length || 0) + 1 : 1
+  };
+}
+
+export function withoutHugoFrontMatter(text) {
+  return hugoContent(text).content;
 }
 
 export function titleFromFrontMatter(text) {

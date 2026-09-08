@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   draftFromFrontMatter,
   expandHugoRefLinks,
+  hugoContent,
   titleFromFrontMatter,
   withoutHugoFrontMatter
 } from '../renderer/markdown-tools.mjs';
@@ -10,6 +11,8 @@ import {
 test('removes YAML and TOML front matter before preview parsing', () => {
   assert.equal(withoutHugoFrontMatter('---\ntitle: Post\n---\n# Body'), '# Body');
   assert.equal(withoutHugoFrontMatter('+++\ntitle = "Post"\n+++\n# Body'), '# Body');
+  assert.deepEqual(hugoContent('+++\r\ntitle = "Post"\r\n+++\r\n# Body'), { content: '# Body', startLine: 4 });
+  assert.deepEqual(hugoContent('# Body'), { content: '# Body', startLine: 1 });
 });
 
 test('extracts quoted Hugo front-matter titles', () => {

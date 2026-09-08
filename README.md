@@ -135,7 +135,7 @@ The template must contain `{src}`; `{thumb}` and `{alt}` are optional, so standa
 
 ## View and keyboard controls
 
-Click the synchronization icon beside the preview toggle to enable **Sync editor and preview** to link editor and preview scrolling in either direction. It is off by default and your choice is remembered. Scrolling follows relative position rather than matching individual paragraphs, so image-heavy posts can differ between panes. Turn it off to scroll independently.
+Click the synchronization icon beside the preview toggle to enable **Sync editor and preview** to link editor and preview scrolling in either direction. It is off by default and your choice is remembered. Scrolling follows corresponding Markdown blocks and ignores front matter that is omitted from the preview; unusually tall images or embeds can still differ between nearby anchors. Turn it off to scroll independently.
 
 The editor and preview keep their chosen width ratio when you resize the window or sidebar. Pane dividers support dragging or keyboard resizing: Tab to a divider and use Left/Right arrows, holding Shift for larger steps. Dialogs keep keyboard focus inside them and support Escape to close. The formatting toolbar displays its actions on one row and moves only the actions that do not fit into **More formatting (•••)**. Expanding the pane brings those actions back; the three-dot button disappears when everything fits. These popovers close with Escape or a click outside. Theme and text size are available under **Settings**. The window title follows the active document as **Almost Editor – Post title**, including unsaved title edits.
 

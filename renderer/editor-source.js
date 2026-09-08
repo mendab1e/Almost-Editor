@@ -114,6 +114,11 @@ export function createMarkdownEditor(parent, onChange) {
   return {
     getValue,
     setValue,
+    scrollTopForLine(lineNumber) {
+      const number = Math.max(1, Math.min(view.state.doc.lines, lineNumber));
+      const line = view.state.doc.line(number);
+      return view.documentPadding.top + view.lineBlockAt(line.from).top;
+    },
     getSelection() {
       const range = view.state.selection.main;
       return { from: range.from, to: range.to, text: view.state.sliceDoc(range.from, range.to) };
