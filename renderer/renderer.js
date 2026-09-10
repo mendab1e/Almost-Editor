@@ -1,6 +1,6 @@
+import { bindDialogs, showDialog } from './dialogs.mjs';
 import { mappedScrollTop, scrollFraction, suggestPostDirectory } from './ui-helpers.mjs';
-import { imageInsertion } from './document-state.mjs';
-import { createMarkdownEditor, marked, sanitizePreview } from './editor.bundle.js';
+import { createMarkdownEditor, renderMarkdownPreview, sanitizePreview } from './editor.bundle.js';
 import {
   buildMarkdownLink,
   formatMarkdownBlock,
@@ -8,6 +8,8 @@ import {
   wrapMarkdownSelection
 } from './markdown-editing.mjs';
 import {
+  imageInsertion,
+  openDocumentState,
   completeDocumentSave,
   dirtyDocumentsForClose,
   documentKeysInDirectory,
@@ -17,10 +19,8 @@ import {
 import {
   draftFromFrontMatter,
   draftEdit,
-  expandHugoRefLinks,
   featuredImageEdit,
   featuredImageFromFrontMatter,
-  hugoContent,
   imagesFromMarkdown,
   titleFromFrontMatter
 } from './markdown-tools.mjs';
@@ -83,14 +83,12 @@ const lightboxEl = document.getElementById('preview-lightbox');
 const lightboxImage = document.getElementById('lightbox-image');
 const closeLightboxBtn = document.getElementById('close-lightbox');
 
-let currentFilePath = null;
 let currentDocumentKey = `draft:${crypto.randomUUID()}`;
 let previewVisible = true;
 let renderDebounce = null;
 let previewScrollTargets = [];
 let savedConfig = { theme: 'system', fontSize: 15 };
 let hugoProjectPath = null;
-let currentProjectPostName = null;
 let hugoPosts = [];
 let pendingLinkSelection = null;
 let windowCloseInProgress = false;
@@ -104,6 +102,10 @@ let recoveryWrite = Promise.resolve();
 const pendingSaves = new Set();
 const pendingImages = new Set();
 let saveQueue = Promise.resolve();
+
+function currentFilePath() {
+  return openDocuments.get(currentDocumentKey)?.filePath ?? null;
+}
 
 function updateDocumentMenu() {
   let untitled = 0;
@@ -143,17 +145,19 @@ function scheduleRecovery() {
   }, 300);
 }
 
-function activateDocument(key) {
+function activateDocument(key, { replaceEditor = true } = {}) {
   hideWelcome();
   const draft = openDocuments.get(key);
   if (!draft) return;
+  const projectChanged = draft.projectPath !== hugoProjectPath;
   currentDocumentKey = key;
-  currentFilePath = draft.filePath;
-  currentProjectPostName = draft.projectPath && draft.filePath ? draft.filePath.split('/').at(-2) : null;
   if (!draft.projectPath) closeProjectSidebar();
-  else hugoProjectPath = draft.projectPath;
-  window.api.setActiveFile({ filePath: draft.filePath, projectPath: draft.projectPath });
-  editor.setValue(draft.content);
+  else {
+    hugoProjectPath = draft.projectPath;
+    workspaceEl.classList.remove('project-closed');
+  }
+  window.api.setActiveFile({ filePath: draft.filePath, projectPath: projectChanged ? draft.projectPath : null });
+  if (replaceEditor) editor.setValue(draft.content);
   updateHeader();
   updateDirtyStatus();
   highlightCurrentPost();
@@ -163,13 +167,7 @@ function activateDocument(key) {
 
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
 const editor = createMarkdownEditor(editorHost, handleEditorChange);
-const DEFAULT_IMAGE_OPTIONS = {
-  imageResize: '1500x1500',
-  imageQuality: 70,
-  thumbnailResize: '500x500',
-  thumbnailQuality: 60
-};
-const DEFAULT_IMAGE_SHORTCODE = '{{< lightbox src="{src}" thumb="{thumb}" alt="{alt}" >}}';
+let defaultConfig;
 
 function resolvedTheme(choice = savedConfig.theme) {
   return choice === 'system' ? (systemTheme.matches ? 'dark' : 'light') : choice;
@@ -183,7 +181,7 @@ function applyTheme(choice = savedConfig.theme) {
 async function initializeTheme() {
   if (window.api) {
     try {
-      savedConfig = await window.api.getConfig();
+      ({ config: savedConfig, defaults: defaultConfig } = await window.api.getConfig());
     } catch (error) {
       console.error('Unable to load theme preference:', error);
     }
@@ -231,7 +229,7 @@ systemTheme.addEventListener('change', () => {
 
 function updateHeader() {
   const title = titleFromFrontMatter(editor.getValue()) ||
-    (currentFilePath ? currentFilePath.split('/').pop() : 'Untitled');
+    (currentFilePath() ? currentFilePath().split('/').pop() : 'Untitled');
   document.title = `Almost Editor – ${title}`;
   updateFrontMatterButtons();
 }
@@ -255,7 +253,6 @@ function handleEditorChange() {
     updateDirtyStatus();
   }
   updateHeader();
-  updatePostTitles();
   scheduleRender();
 }
 
@@ -278,23 +275,10 @@ function updatePostDirtyIndicators() {
   });
 }
 
-function openDocument(filePath, diskContent) {
+function openDocument(filePath, diskContent, projectPath = null) {
   const key = documentKey(filePath);
-  let document = openDocuments.get(key);
-  // A dirty buffer is the user's in-memory draft. Prefer it over a fresh read
-  // from disk when returning to a sidebar post; clean documents can refresh.
-  if (!document) {
-    document = { savedContent: diskContent, content: diskContent, dirty: false, filePath, projectPath: hugoProjectPath };
-    openDocuments.set(key, document);
-  } else if (!document.dirty) {
-    document.savedContent = diskContent;
-    document.content = diskContent;
-    document.projectPath = hugoProjectPath;
-  }
-  currentDocumentKey = key;
-  editor.setValue(document.content);
-  scheduleRecovery();
-  updateDirtyStatus();
+  openDocumentState(openDocuments, key, { filePath, content: diskContent, projectPath });
+  activateDocument(key);
 }
 
 function setupHorizontalResizer(handle, getStartWidth, resize) {
@@ -422,75 +406,17 @@ function showEmptyProject(projectPath) {
 function highlightCurrentPost() {
   postListEl.querySelectorAll('.post-entry').forEach((button) => {
     const expectedEnding = `/content/posts/${button.dataset.postPath}/index.md`;
-    const active = Boolean(currentFilePath && currentFilePath.endsWith(expectedEnding));
+    const active = Boolean(currentFilePath() && currentFilePath().endsWith(expectedEnding));
     button.classList.toggle('active', active);
     if (active) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   });
 }
 
-function escapeHtml(value) {
-  return String(value || '').replace(/[&<>"']/g, (character) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[character]));
-}
-
-function parseShortcodeAttributes(source) {
-  const attributes = {};
-  const pattern = /([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s]+))/g;
-  let match;
-  while ((match = pattern.exec(source))) {
-    attributes[match[1]] = (match[2] ?? match[3] ?? match[4] ?? '').replace(/&(amp|quot|lt|gt);/g, (_, entity) => ({ amp: '&', quot: '"', lt: '<', gt: '>' })[entity]);
-  }
-  return attributes;
-}
-
-function expandLightboxShortcodes(markdown, firstSourceLine) {
-  const replacements = [];
-  const expanded = markdown.replace(/\{\{<\s*lightbox\b([^\n]*?)>\}\}/gi, (shortcode, attributeText) => {
-    const attributes = parseShortcodeAttributes(attributeText);
-    if (!attributes.src) return shortcode;
-
-    const src = escapeHtml(attributes.src);
-    const thumb = escapeHtml(attributes.thumb || attributes.src);
-    const alt = escapeHtml(attributes.alt || 'Image');
-    const figure = `<figure class="lightbox"><a href="${src}" data-editor-lightbox><img src="${thumb}" alt="${alt}" loading="lazy"></a>${attributes.alt ? `<figcaption>${alt}</figcaption>` : ''}</figure>`;
-    const placeholder = `@@EDITOR_LIGHTBOX_${replacements.length}@@`;
-    replacements.push({ placeholder, figure });
-    return placeholder;
-  });
-
-  // Add zero-height anchors before rendered blocks so scroll synchronization
-  // can match content even when Markdown and HTML have very different heights.
-  const tokens = marked.lexer(expanded, { breaks: false });
-  const anchoredTokens = [];
-  let sourceLine = firstSourceLine;
-  for (const token of tokens) {
-    if (token.type !== 'space' && token.type !== 'def') {
-      anchoredTokens.push({
-        type: 'html',
-        raw: '',
-        block: true,
-        text: `<span class="preview-scroll-anchor" data-source-line="${sourceLine}"></span>`
-      });
-    }
-    anchoredTokens.push(token);
-    sourceLine += token.raw?.match(/\n/g)?.length || 0;
-  }
-
-  // Hugo's Goldmark renderer treats an ordinary source newline as whitespace,
-  // not as an HTML <br>. This keeps URLs and other inline Markdown together.
-  let html = marked.parser(anchoredTokens, { breaks: false });
-  for (const { placeholder, figure } of replacements) {
-    html = html.replace(`<p>${placeholder}</p>\n`, figure);
-    html = html.replace(placeholder, figure);
-  }
-  return html;
-}
-
 function localPreviewUrl(source) {
-  if (!source || /^(https?:|file:|data:|hugo-ref:|#)/i.test(source) || !currentFilePath) return source;
-  const postDir = currentFilePath.substring(0, currentFilePath.lastIndexOf('/'));
+  const filePath = currentFilePath();
+  if (!source || /^(https?:|file:|data:|hugo-ref:|#)/i.test(source) || !filePath) return source;
+  const postDir = filePath.substring(0, filePath.lastIndexOf('/'));
   return new URL(source, `file://${postDir}/`).href;
 }
 
@@ -511,9 +437,7 @@ function renderPreview() {
   try {
     // Hugo removes front matter before rendering a page. Do the same for the
     // editor preview, then render with the bundled Marked parser.
-    const { content, startLine } = hugoContent(editor.getValue());
-    const markdown = expandHugoRefLinks(content);
-    preview.innerHTML = sanitizePreview(expandLightboxShortcodes(markdown, startLine));
+    preview.innerHTML = sanitizePreview(renderMarkdownPreview(editor.getValue()));
     collectPreviewScrollTargets();
   } catch (error) {
     previewScrollTargets = [];
@@ -526,8 +450,7 @@ function renderPreview() {
   // Markdown image paths are relative to the post's folder (e.g. "images/foo.webp"),
   // but the preview pane is loaded from renderer/index.html, so rewrite them to
   // absolute file:// URLs based on where the .md file lives.
-  if (currentFilePath) {
-    const postDir = currentFilePath.substring(0, currentFilePath.lastIndexOf('/'));
+  if (currentFilePath()) {
     preview.querySelectorAll('img, a[href]').forEach((element) => {
       const attribute = element.tagName === 'IMG' ? 'src' : 'href';
       const source = element.getAttribute(attribute);
@@ -596,8 +519,7 @@ preview.addEventListener('click', (event) => {
   const image = link.querySelector('img');
   lightboxImage.src = link.href;
   lightboxImage.alt = image ? image.alt : 'Image';
-  lightboxEl.classList.remove('hidden');
-  closeLightboxBtn.focus();
+  showDialog(lightboxEl, closeLightboxBtn);
 });
 
 function closeLightbox() {
@@ -605,25 +527,24 @@ function closeLightbox() {
   lightboxImage.removeAttribute('src');
 }
 
-closeLightboxBtn.addEventListener('click', closeLightbox);
-lightboxEl.addEventListener('click', (event) => {
-  if (event.target === lightboxEl) closeLightbox();
-});
-
 openProjectBtn.addEventListener('click', async () => {
   if (!window.api) return;
   await window.api.openHugoProjectDialog();
 });
 
-function openImageOptions() {
-  imageResizeInput.value = savedConfig.imageResize || DEFAULT_IMAGE_OPTIONS.imageResize;
-  imageQualityInput.value = savedConfig.imageQuality ?? DEFAULT_IMAGE_OPTIONS.imageQuality;
-  thumbnailResizeInput.value = savedConfig.thumbnailResize || DEFAULT_IMAGE_OPTIONS.thumbnailResize;
-  thumbnailQualityInput.value = savedConfig.thumbnailQuality ?? DEFAULT_IMAGE_OPTIONS.thumbnailQuality;
-  imageShortcodeTemplateInput.value = savedConfig.imageShortcodeTemplate || DEFAULT_IMAGE_SHORTCODE;
+async function openImageOptions() {
+  await settingsReady;
+  if (!defaultConfig) {
+    setStatus('Image options could not be loaded', true);
+    return;
+  }
+  imageResizeInput.value = savedConfig.imageResize || defaultConfig.imageResize;
+  imageQualityInput.value = savedConfig.imageQuality ?? defaultConfig.imageQuality;
+  thumbnailResizeInput.value = savedConfig.thumbnailResize || defaultConfig.thumbnailResize;
+  thumbnailQualityInput.value = savedConfig.thumbnailQuality ?? defaultConfig.thumbnailQuality;
+  imageShortcodeTemplateInput.value = savedConfig.imageShortcodeTemplate || defaultConfig.imageShortcodeTemplate;
   imageOptionsError.textContent = '';
-  imageOptionsDialog.classList.remove('hidden');
-  imageResizeInput.focus();
+  showDialog(imageOptionsDialog, imageResizeInput);
 }
 
 function closeImageOptions() {
@@ -631,20 +552,16 @@ function closeImageOptions() {
 }
 
 imageOptionsBtn.addEventListener('click', openImageOptions);
-cancelImageOptionsBtn.addEventListener('click', closeImageOptions);
 resetImageSizeBtn.addEventListener('click', () => {
-  imageResizeInput.value = DEFAULT_IMAGE_OPTIONS.imageResize;
-  imageQualityInput.value = String(DEFAULT_IMAGE_OPTIONS.imageQuality);
-  thumbnailResizeInput.value = DEFAULT_IMAGE_OPTIONS.thumbnailResize;
-  thumbnailQualityInput.value = String(DEFAULT_IMAGE_OPTIONS.thumbnailQuality);
+  imageResizeInput.value = defaultConfig.imageResize;
+  imageQualityInput.value = String(defaultConfig.imageQuality);
+  thumbnailResizeInput.value = defaultConfig.thumbnailResize;
+  thumbnailQualityInput.value = String(defaultConfig.thumbnailQuality);
   imageOptionsError.textContent = '';
 });
 resetImageShortcodeBtn.addEventListener('click', () => {
-  imageShortcodeTemplateInput.value = DEFAULT_IMAGE_SHORTCODE;
+  imageShortcodeTemplateInput.value = defaultConfig.imageShortcodeTemplate;
   imageOptionsError.textContent = '';
-});
-imageOptionsDialog.addEventListener('click', (event) => {
-  if (event.target === imageOptionsDialog) closeImageOptions();
 });
 imageOptionsForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -693,18 +610,12 @@ newPostBtn.addEventListener('click', async () => {
   document.getElementById('new-post-heading').value = '';
   directoryEdited = false;
   updatePostLocation();
-  newPostDialog.classList.remove('hidden');
-  document.getElementById('new-post-heading').focus();
+  showDialog(newPostDialog, document.getElementById('new-post-heading'));
 });
 
 function closeNewPostDialog() {
   newPostDialog.classList.add('hidden');
 }
-
-cancelNewPostBtn.addEventListener('click', closeNewPostDialog);
-newPostDialog.addEventListener('click', (event) => {
-  if (event.target === newPostDialog) closeNewPostDialog();
-});
 
 newPostForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -843,8 +754,7 @@ function openLinkDialog() {
   linkForm.elements.linkType.value = 'url';
   populateLinkPostOptions();
   updateLinkTargetFields();
-  linkDialog.classList.remove('hidden');
-  (pendingLinkSelection.text ? linkUrlInput : linkTextInput).focus();
+  showDialog(linkDialog, (pendingLinkSelection.text ? linkUrlInput : linkTextInput));
 }
 
 function closeLinkDialog() {
@@ -859,10 +769,6 @@ linkForm.addEventListener('change', (event) => {
     updateLinkTargetFields();
     (selectedLinkType() === 'post' ? linkPostSelect : linkUrlInput).focus();
   }
-});
-cancelLinkBtn.addEventListener('click', closeLinkDialog);
-linkDialog.addEventListener('click', (event) => {
-  if (event.target === linkDialog) closeLinkDialog();
 });
 linkForm.addEventListener('submit', (event) => {
   event.preventDefault();
@@ -923,8 +829,7 @@ function openFeaturedImageDialog() {
   }
   featuredImageEmpty.classList.toggle('hidden', images.length > 0);
   confirmFeaturedImageBtn.disabled = images.length === 0;
-  featuredImageDialog.classList.remove('hidden');
-  (featuredImageOptions.querySelector('input') || cancelFeaturedImageBtn).focus();
+  showDialog(featuredImageDialog, (featuredImageOptions.querySelector('input') || cancelFeaturedImageBtn));
 }
 
 function closeFeaturedImageDialog() {
@@ -933,10 +838,6 @@ function closeFeaturedImageDialog() {
 }
 
 insertFeaturedImageBtn.addEventListener('click', openFeaturedImageDialog);
-cancelFeaturedImageBtn.addEventListener('click', closeFeaturedImageDialog);
-featuredImageDialog.addEventListener('click', (event) => {
-  if (event.target === featuredImageDialog) closeFeaturedImageDialog();
-});
 featuredImageForm.addEventListener('submit', (event) => {
   event.preventDefault();
   const imagePath = new FormData(featuredImageForm).get('featuredImage');
@@ -975,7 +876,7 @@ async function insertImageFile(filePath, alt, context) {
   const originalContent = context?.content ?? editor.getValue();
   const position = context?.position ?? editor.getSelection().from;
   setStatus('Inserting image…');
-  const result = await window.api.processImage({ sourcePath: filePath, alt, filePath: context?.filePath || currentFilePath })
+  const result = await window.api.processImage({ sourcePath: filePath, alt, filePath: context?.filePath || currentFilePath() })
     .catch((error) => ({ ok: false, error: error.message || 'Image processing failed' }));
   if (!result.ok) {
     setStatus(result.error, true);
@@ -1059,20 +960,7 @@ if (window.api) {
   });
 
   window.api.onFileOpened(({ filePath, content, projectPath }) => {
-    hideWelcome();
-    currentFilePath = filePath;
-    if (projectPath) {
-      hugoProjectPath = projectPath;
-      currentProjectPostName = filePath ? filePath.split('/').at(-2) : null;
-      workspaceEl.classList.remove('project-closed');
-    } else {
-      currentProjectPostName = null;
-      closeProjectSidebar();
-    }
-    openDocument(filePath, content);
-    updateHeader();
-    highlightCurrentPost();
-    renderPreview();
+    openDocument(filePath, content, projectPath);
   });
 
   window.api.onProjectOpened(({ projectPath, posts }) => {
@@ -1125,6 +1013,9 @@ if (window.api) {
 
   window.api.onRequestSave(() => saveCurrent(false));
   window.api.onRequestSaveAs(() => saveCurrent(true));
+  window.api.onRequestFind(() => editor.openSearch());
+  window.api.onRequestFindNext(() => editor.findNext());
+  window.api.onRequestFindPrevious(() => editor.findPrevious());
   window.api.onRequestWindowClose(handleWindowCloseRequest);
 } else {
   console.error('Electron preload API was not loaded');
@@ -1152,12 +1043,7 @@ function queueDocumentSave(document, forcePicker) {
     const moved = completeDocumentSave(openDocuments, document, content, result.filePath);
     if (previousPath !== result.filePath) document.projectPath = null;
     if (moved && activeDocument === document) {
-      currentDocumentKey = moved.key;
-      currentFilePath = result.filePath;
-      window.api.setActiveFile({ filePath: result.filePath });
-      if (!document.projectPath) { currentProjectPostName = null; closeProjectSidebar(); }
-      updateHeader();
-      renderPreview();
+      activateDocument(moved.key, { replaceEditor: false });
     }
     updateDirtyStatus();
     await flushRecovery();
@@ -1229,41 +1115,18 @@ async function handleWindowCloseRequest() {
 
 // Render once after the DOM and preload bridge are both ready. Without this,
 // the preview remains stale until an input or file-open event happens.
-initializeTheme();
+const settingsReady = initializeTheme();
 balanceEditorAndPreview();
 renderPreview();
 updateDocumentMenu();
 
 // Cmd+S shortcut inside the editor itself too
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !linkDialog.classList.contains('hidden')) {
-    closeLinkDialog();
-    return;
-  }
-  if (e.key === 'Escape' && !imageOptionsDialog.classList.contains('hidden')) {
-    closeImageOptions();
-    return;
-  }
-  if (e.key === 'Escape' && !featuredImageDialog.classList.contains('hidden')) {
-    closeFeaturedImageDialog();
-    return;
-  }
-  if (e.key === 'Escape' && !newPostDialog.classList.contains('hidden')) {
-    closeNewPostDialog();
-    return;
-  }
-  if (e.key === 'Escape' && !lightboxEl.classList.contains('hidden')) {
-    closeLightbox();
-    return;
-  }
   if ((e.metaKey || e.ctrlKey) && e.key === 's') {
     e.preventDefault();
     saveCurrent(e.shiftKey);
     return;
   }
-  if (!linkDialog.classList.contains('hidden') || !newPostDialog.classList.contains('hidden') ||
-      !featuredImageDialog.classList.contains('hidden') ||
-      !imageOptionsDialog.classList.contains('hidden')) return;
   if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
     const shortcut = e.key.toLowerCase();
     if (shortcut === 'b' || shortcut === 'i') {
@@ -1276,7 +1139,6 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-
 function hideWelcome() {
   document.body.classList.remove('is-home');
   document.getElementById('welcome').classList.add('hidden');
@@ -1288,7 +1150,7 @@ async function showWelcome() {
   welcome.classList.remove('hidden');
   workspaceEl.classList.add('hidden');
   document.getElementById('welcome-project').focus();
-  try { savedConfig = await window.api.getConfig(); renderRecentDocuments(); }
+  try { ({ config: savedConfig, defaults: defaultConfig } = await window.api.getConfig()); renderRecentDocuments(); }
   catch { setStatus('Recent documents could not be loaded', true); }
 }
 let recentRenderVersion = 0;
@@ -1329,7 +1191,7 @@ document.getElementById('welcome-project').addEventListener('click', () => windo
 document.getElementById('welcome-file').addEventListener('click', () => window.api.openFileDialog());
 document.getElementById('welcome-new').addEventListener('click', () => window.api.newFile());
 // Session restoration events hide this screen when there is a document or project to resume.
-if (!currentFilePath && !hugoProjectPath && !editor.getValue()) {
+if (!currentFilePath() && !hugoProjectPath && !editor.getValue()) {
   document.body.classList.add('is-home');
   document.getElementById('welcome').classList.remove('hidden');
   workspaceEl.classList.add('hidden');
@@ -1378,22 +1240,20 @@ let imageContext = null;
 const imageDialog = document.getElementById('insert-image-dialog');
 function promptImage(filePath) {
   if (!filePath || windowCloseInProgress) return;
-  if (!currentFilePath) { setStatus('Save your draft before inserting an image.', true); return; }
+  if (!currentFilePath()) { setStatus('Save your draft before inserting an image.', true); return; }
   selectedImagePath = filePath;
-  imageContext = { key: currentDocumentKey, filePath: currentFilePath, content: editor.getValue(), position: editor.getSelection().from };
+  imageContext = { key: currentDocumentKey, filePath: currentFilePath(), content: editor.getValue(), position: editor.getSelection().from };
   document.getElementById('image-selected-name').textContent = filePath.split('/').pop();
   document.getElementById('image-alt').value = '';
-  imageDialog.classList.remove('hidden');
-  document.getElementById('image-alt').focus();
+  showDialog(imageDialog, document.getElementById('image-alt'));
 }
 function closeImageDialog() { imageDialog.classList.add('hidden'); selectedImagePath = null; editor.focus(); }
 document.getElementById('insert-image').addEventListener('click', async () => {
-  if (!currentFilePath) {
+  if (!currentFilePath()) {
     if (!(await saveCurrent(true))) return;
   }
   promptImage(await window.api.chooseImage());
 });
-document.getElementById('cancel-insert-image').addEventListener('click', closeImageDialog);
 document.getElementById('insert-image-form').addEventListener('submit', event => {
   event.preventDefault();
   const filePath = selectedImagePath;
@@ -1464,35 +1324,17 @@ document.getElementById('sync-scroll').addEventListener('click', async () => {
   catch { setStatus('Scroll preference could not be saved', true); }
 });
 
-// Keep modal keyboard focus inside the active dialog and restore the invoking control.
-const modalFocus = new Map();
-for (const modal of document.querySelectorAll('[aria-modal="true"]')) {
-  new MutationObserver(() => {
-    if (modal.classList.contains('hidden')) {
-      const trigger = modalFocus.get(modal);
-      if (trigger?.getClientRects().length) trigger.focus();
-      else if (trigger === imageOptionsBtn) document.getElementById('settings-button').focus();
-      modalFocus.delete(modal);
-    }
-  }).observe(modal, { attributes: true, attributeFilter: ['class'] });
-}
-document.addEventListener('click', event => {
-  for (const modal of document.querySelectorAll('[aria-modal="true"].hidden')) modalFocus.set(modal, event.target.closest('button') || document.activeElement);
-}, true);
-document.addEventListener('keydown', event => {
-  const modal = document.querySelector('[aria-modal="true"]:not(.hidden)');
-  if (!modal) return;
-  if (event.key === 'Escape' && modal === imageDialog) { event.preventDefault(); closeImageDialog(); }
-  if (event.key === 'Escape' && modal === featuredImageDialog) { event.preventDefault(); closeFeaturedImageDialog(); }
-  if (event.key === 'Tab') {
-    const controls = [...modal.querySelectorAll('button, input, select, textarea, [tabindex="0"]')].filter(el => !el.disabled && el.getClientRects().length);
-    const first = controls[0], last = controls.at(-1);
-    if (event.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) { event.preventDefault(); last?.focus(); }
-    else if (!event.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) { event.preventDefault(); first?.focus(); }
-  }
-  if ((event.metaKey || event.ctrlKey) && ['b', 'i', 'k', 's'].includes(event.key.toLowerCase())) event.stopImmediatePropagation();
-}, true);
-
+bindDialogs([
+  { dialog: linkDialog, cancel: cancelLinkBtn, close: closeLinkDialog },
+  { dialog: imageOptionsDialog, cancel: cancelImageOptionsBtn, close: closeImageOptions },
+  { dialog: featuredImageDialog, cancel: cancelFeaturedImageBtn, close: closeFeaturedImageDialog },
+  { dialog: newPostDialog, cancel: cancelNewPostBtn, close: closeNewPostDialog },
+  { dialog: lightboxEl, cancel: closeLightboxBtn, close: closeLightbox },
+  { dialog: imageDialog, cancel: document.getElementById('cancel-insert-image'), close: closeImageDialog },
+], {
+  document,
+  fallbackFocus: trigger => trigger === imageOptionsBtn ? document.getElementById('settings-button') : null
+});
 
 // Native popovers handle outside clicks, Escape, and returning focus to the trigger.
 for (const [popoverId, triggerId] of [['settings-popover', 'settings-button'], ['format-popover', 'more-format']]) {
@@ -1512,7 +1354,6 @@ document.getElementById('format-popover').addEventListener('click', event => {
   applyFormat(button.dataset.format);
 });
 imageOptionsBtn.addEventListener('click', () => document.getElementById('settings-popover').hidePopover());
-
 
 // Keep every formatting action visible until its actual width no longer fits.
 const overflowFormats = [...document.querySelectorAll('#format-popover [data-format]')];

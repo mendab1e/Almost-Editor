@@ -3666,6 +3666,82 @@ var parseInline = marked.parseInline;
 var parser = _Parser.parse;
 var lexer = _Lexer.lex;
 
+// renderer/markdown-tools.mjs
+function hugoContent(text2) {
+  const source = text2 || "";
+  const match = source.match(/^(---|\+\+\+)[ \t]*\r?\n[\s\S]*?\r?\n\1[ \t]*(?:\r?\n|$)/);
+  return {
+    content: match ? source.slice(match[0].length) : source,
+    startLine: match ? (match[0].match(/\n/g)?.length || 0) + 1 : 1
+  };
+}
+function expandHugoRefLinks(markdown2) {
+  return markdown2.replace(
+    /\[([^\]]+)\]\(\s*\{\{<\s*ref\s+["']([^"']+)["']\s*>\}\}\s*\)/gi,
+    (fullMatch, label, target) => `[${label}](hugo-ref:${target})`
+  );
+}
+
+// renderer/preview-rendering.mjs
+function escapeHtml(value) {
+  return String(value || "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[character]);
+}
+function parseShortcodeAttributes(source) {
+  const attributes = {};
+  const pattern = /([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s]+))/g;
+  let match;
+  while (match = pattern.exec(source)) {
+    attributes[match[1]] = (match[2] ?? match[3] ?? match[4] ?? "").replace(/&(amp|quot|lt|gt);/g, (_, entity) => ({ amp: "&", quot: '"', lt: "<", gt: ">" })[entity]);
+  }
+  return attributes;
+}
+function expandLightboxShortcodes(markdown2, firstSourceLine) {
+  const replacements = [];
+  const expanded = markdown2.replace(/\{\{<\s*lightbox\b([^\n]*?)>\}\}/gi, (shortcode, attributeText) => {
+    const attributes = parseShortcodeAttributes(attributeText);
+    if (!attributes.src) return shortcode;
+    const src = escapeHtml(attributes.src);
+    const thumb = escapeHtml(attributes.thumb || attributes.src);
+    const alt = escapeHtml(attributes.alt || "Image");
+    const figure = `<figure class="lightbox"><a href="${src}" data-editor-lightbox><img src="${thumb}" alt="${alt}" loading="lazy"></a>${attributes.alt ? `<figcaption>${alt}</figcaption>` : ""}</figure>`;
+    const placeholder = `@@EDITOR_LIGHTBOX_${replacements.length}@@`;
+    replacements.push({ placeholder, figure });
+    return placeholder;
+  });
+  const tokens = marked.lexer(expanded, { breaks: false });
+  const anchoredTokens = [];
+  let sourceLine = firstSourceLine;
+  for (const token of tokens) {
+    if (token.type !== "space" && token.type !== "def") {
+      anchoredTokens.push({
+        type: "html",
+        raw: "",
+        block: true,
+        text: `<span class="preview-scroll-anchor" data-source-line="${sourceLine}"></span>`
+      });
+    }
+    anchoredTokens.push(token);
+    sourceLine += token.raw?.match(/\n/g)?.length || 0;
+  }
+  let html4 = marked.parser(anchoredTokens, { breaks: false });
+  for (const { placeholder, figure } of replacements) {
+    html4 = html4.replace(`<p>${placeholder}</p>
+`, figure);
+    html4 = html4.replace(placeholder, figure);
+  }
+  return html4;
+}
+function renderMarkdownPreview(source) {
+  const { content: content2, startLine } = hugoContent(source);
+  return expandLightboxShortcodes(expandHugoRefLinks(content2), startLine);
+}
+
 // node_modules/@marijn/find-cluster-break/src/index.js
 var rangeFrom = [];
 var rangeTo = [];
@@ -3843,7 +3919,7 @@ var Text = class _Text {
   Return a cursor that iterates over the given range of lines,
   _without_ returning the line breaks between, and yielding empty
   strings for empty lines.
-  
+
   When `from` and `to` are given, they should be 1-based line numbers.
   */
   iterLines(from, to) {
@@ -4069,11 +4145,11 @@ var TextNode = class _TextNode extends Text {
       /* Tree.BranchShift */
     ), maxChunk = chunk << 1, minChunk = chunk >> 1;
     let chunked = [], currentLines = 0, currentLen = -1, currentChunk = [];
-    function add(child) {
+    function add2(child) {
       let last;
       if (child.lines > maxChunk && child instanceof _TextNode) {
         for (let node of child.children)
-          add(node);
+          add2(node);
       } else if (child.lines > minChunk && (currentLines > minChunk || !currentLines)) {
         flush();
         chunked.push(child);
@@ -4097,7 +4173,7 @@ var TextNode = class _TextNode extends Text {
       currentLines = currentChunk.length = 0;
     }
     for (let child of children)
-      add(child);
+      add2(child);
     flush();
     return chunked.length == 1 ? chunked[0] : new _TextNode(chunked, length);
   }
@@ -4309,6 +4385,12 @@ function codePointAt2(str, pos) {
     return code0;
   return (code0 - 55296 << 10) + (code1 - 56320) + 65536;
 }
+function fromCodePoint(code) {
+  if (code <= 65535)
+    return String.fromCharCode(code);
+  code -= 65536;
+  return String.fromCharCode((code >> 10) + 55296, (code & 1023) + 56320);
+}
 function codePointSize2(code) {
   return code < 65536 ? 1 : 2;
 }
@@ -4382,7 +4464,7 @@ var ChangeDesc = class _ChangeDesc {
   `fromA`/`toA` provides the extent of the change in the starting
   document, `fromB`/`toB` the extent of the replacement in the
   changed document.
-  
+
   When `individual` is true, adjacent changes (which are kept
   separate for [position mapping](https://codemirror.net/6/docs/ref/#state.ChangeDesc.mapPos)) are
   reported separately.
@@ -4544,7 +4626,7 @@ var ChangeSet = class _ChangeSet extends ChangeDesc {
   applied to the document produced by applying `other`. When
   `before` is `true`, order changes as if `this` comes before
   `other`, otherwise (the default) treat `other` as coming first.
-  
+
   Given two changes `A` and `B`, `A.compose(B.map(A))` and
   `B.compose(A.map(B, true))` will produce the same document. This
   provides a basic form of [operational
@@ -4559,7 +4641,7 @@ var ChangeSet = class _ChangeSet extends ChangeDesc {
   each, with the range in the original document (`fromA`-`toA`)
   and the range that replaces it in the new document
   (`fromB`-`toB`).
-  
+
   When `individual` is true, adjacent changes are reported
   separately.
   */
@@ -5187,7 +5269,7 @@ var Facet = class _Facet {
   state. You must take care to declare the parts of the state that
   this value depends on, since your function is only called again
   for a new state when one of those parts changed.
-  
+
   In cases where your value depends only on a single field, you'll
   want to use the [`from`](https://codemirror.net/6/docs/ref/#state.Facet.from) method instead.
   */
@@ -6187,33 +6269,33 @@ var EditorState = class _EditorState {
   Look up a translation for the given phrase (via the
   [`phrases`](https://codemirror.net/6/docs/ref/#state.EditorState^phrases) facet), or return the
   original string if no translation is found.
-  
+
   If additional arguments are passed, they will be inserted in
   place of markers like `$1` (for the first value) and `$2`, etc.
   A single `$` is equivalent to `$1`, and `$$` will produce a
   literal dollar sign.
   */
-  phrase(phrase, ...insert2) {
+  phrase(phrase2, ...insert2) {
     for (let map of this.facet(_EditorState.phrases))
-      if (Object.prototype.hasOwnProperty.call(map, phrase)) {
-        phrase = map[phrase];
+      if (Object.prototype.hasOwnProperty.call(map, phrase2)) {
+        phrase2 = map[phrase2];
         break;
       }
     if (insert2.length)
-      phrase = phrase.replace(/\$(\$|\d*)/g, (m, i) => {
+      phrase2 = phrase2.replace(/\$(\$|\d*)/g, (m, i) => {
         if (i == "$")
           return "$";
         let n = +(i || 1);
         return !n || n > insert2.length ? m : insert2[n - 1];
       });
-    return phrase;
+    return phrase2;
   }
   /**
   Find the values for a given language data field, provided by the
   the [`languageData`](https://codemirror.net/6/docs/ref/#state.EditorState^languageData) facet.
-  
+
   Examples of language data fields are...
-  
+
   - [`"commentTokens"`](https://codemirror.net/6/docs/ref/#commands.CommentTokens) for specifying
     comment syntax.
   - [`"autocomplete"`](https://codemirror.net/6/docs/ref/#autocomplete.autocompletion^config.override)
@@ -6238,7 +6320,7 @@ var EditorState = class _EditorState {
   Return a function that can categorize strings (expected to
   represent a single [grapheme cluster](https://codemirror.net/6/docs/ref/#state.findClusterBreak))
   into one of:
-  
+
    - Word (contains an alphanumeric character or a character
      explicitly listed in the local language's `"wordChars"`
      language data, which should be a string)
@@ -6454,29 +6536,29 @@ var RangeSet = class _RangeSet {
   /**
   Update the range set, optionally adding new ranges or filtering
   out existing ones.
-  
+
   (Note: The type parameter is just there as a kludge to work
   around TypeScript variance issues that prevented `RangeSet<X>`
   from being a subtype of `RangeSet<Y>` when `X` is a subtype of
   `Y`.)
   */
   update(updateSpec) {
-    let { add = [], sort = false, filterFrom = 0, filterTo = this.length } = updateSpec;
+    let { add: add2 = [], sort = false, filterFrom = 0, filterTo = this.length } = updateSpec;
     let filter = updateSpec.filter;
-    if (add.length == 0 && !filter)
+    if (add2.length == 0 && !filter)
       return this;
     if (sort)
-      add = add.slice().sort(cmpRange);
+      add2 = add2.slice().sort(cmpRange);
     if (this.isEmpty)
-      return add.length ? _RangeSet.of(add) : this;
+      return add2.length ? _RangeSet.of(add2) : this;
     let cur = new LayerCursor(this, null, -1).goto(0), i = 0, spill = [];
     let builder = new RangeSetBuilder();
-    while (cur.value || i < add.length) {
-      if (i < add.length && (cur.from - add[i].from || cur.startSide - add[i].value.startSide) >= 0) {
-        let range = add[i++];
+    while (cur.value || i < add2.length) {
+      if (i < add2.length && (cur.from - add2[i].from || cur.startSide - add2[i].value.startSide) >= 0) {
+        let range = add2[i++];
         if (!builder.addInner(range.from, range.to, range.value))
           spill.push(range);
-      } else if (cur.rangeIndex == 1 && cur.chunkIndex < this.chunk.length && (i == add.length || this.chunkEnd(cur.chunkIndex) < add[i].from) && (!filter || filterFrom > this.chunkEnd(cur.chunkIndex) || filterTo < this.chunkPos[cur.chunkIndex]) && builder.addChunk(this.chunkPos[cur.chunkIndex], this.chunk[cur.chunkIndex])) {
+      } else if (cur.rangeIndex == 1 && cur.chunkIndex < this.chunk.length && (i == add2.length || this.chunkEnd(cur.chunkIndex) < add2[i].from) && (!filter || filterFrom > this.chunkEnd(cur.chunkIndex) || filterTo < this.chunkPos[cur.chunkIndex]) && builder.addChunk(this.chunkPos[cur.chunkIndex], this.chunk[cur.chunkIndex])) {
         cur.nextChunk();
       } else {
         if (!filter || filterFrom > cur.to || filterTo < cur.from || filter(cur.from, cur.to, cur.value)) {
@@ -7343,6 +7425,35 @@ function keyName(event) {
   if (name2 == "Right") name2 = "ArrowRight";
   if (name2 == "Down") name2 = "ArrowDown";
   return name2;
+}
+
+// node_modules/crelt/index.js
+function crelt() {
+  var elt2 = arguments[0];
+  if (typeof elt2 == "string") elt2 = document.createElement(elt2);
+  var i = 1, next = arguments[1];
+  if (next && typeof next == "object" && next.nodeType == null && !Array.isArray(next)) {
+    for (var name2 in next) if (Object.prototype.hasOwnProperty.call(next, name2)) {
+      var value = next[name2];
+      if (typeof value == "string") elt2.setAttribute(name2, value);
+      else if (value != null) elt2[name2] = value;
+    }
+    i++;
+  }
+  for (; i < arguments.length; i++) add(elt2, arguments[i]);
+  return elt2;
+}
+function add(elt2, child) {
+  if (typeof child == "string") {
+    elt2.appendChild(document.createTextNode(child));
+  } else if (child == null) {
+  } else if (child.nodeType != null) {
+    elt2.appendChild(child);
+  } else if (Array.isArray(child)) {
+    for (var i = 0; i < child.length; i++) add(elt2, child[i]);
+  } else {
+    throw new RangeError("Unsupported child node: " + child);
+  }
 }
 
 // node_modules/@codemirror/view/dist/index.js
@@ -8626,9 +8737,9 @@ function getIsolatedRanges(view, line) {
           update.to = to;
           level = update.inner;
         } else {
-          let add = { from, to, direction, inner: [] };
-          level.push(add);
-          level = add.inner;
+          let add2 = { from, to, direction, inner: [] };
+          level.push(add2);
+          level = add2.inner;
         }
       }
     }
@@ -12338,11 +12449,11 @@ var BlockInfo = class _BlockInfo {
     return new _BlockInfo(this.from, this.length + other.length, this.top, this.height + other.height, content2);
   }
 };
-var QueryType = /* @__PURE__ */ (function(QueryType2) {
-  QueryType2[QueryType2["ByPos"] = 0] = "ByPos";
-  QueryType2[QueryType2["ByHeight"] = 1] = "ByHeight";
-  QueryType2[QueryType2["ByPosNoHeight"] = 2] = "ByPosNoHeight";
-  return QueryType2;
+var QueryType = /* @__PURE__ */ (function(QueryType3) {
+  QueryType3[QueryType3["ByPos"] = 0] = "ByPos";
+  QueryType3[QueryType3["ByHeight"] = 1] = "ByHeight";
+  QueryType3[QueryType3["ByPosNoHeight"] = 2] = "ByPosNoHeight";
+  return QueryType3;
 })(QueryType || (QueryType = {}));
 var Epsilon = 1e-3;
 var HeightMap = class _HeightMap {
@@ -15096,7 +15207,7 @@ var EditorView = class _EditorView {
   When the start position was the last one on the line, the
   returned position will be across the line break. If there is no
   further line, the original position is returned.
-  
+
   By default, this method moves over a single cluster. The
   optional `by` argument can be used to move across more. It will
   be called with the first cluster as argument, and should return
@@ -15140,7 +15251,7 @@ var EditorView = class _EditorView {
   it defaults to moving to the next line (including wrapped
   lines). Otherwise, `distance` should provide a positive distance
   in pixels.
-  
+
   When `start` has a
   [`goalColumn`](https://codemirror.net/6/docs/ref/#state.SelectionRange.goalColumn), the vertical
   motion will use that as a target horizontal position. Otherwise,
@@ -15155,7 +15266,7 @@ var EditorView = class _EditorView {
   Find the DOM parent node and offset (child offset if `node` is
   an element, character offset when it is a text node) at the
   given document position.
-  
+
   Note that for positions that aren't currently in
   `visibleRanges`, the resulting DOM position isn't necessarily
   meaningful (it may just point before or after a placeholder
@@ -15337,7 +15448,7 @@ var EditorView = class _EditorView {
   only affects the editor's own scrollable element, not parents.
   See also
   [`EditorViewConfig.scrollTo`](https://codemirror.net/6/docs/ref/#view.EditorViewConfig.scrollTo).
-  
+
   The effect should be used with a document identical to the one
   it was created for. Failing to do so is not an error, but may
   not scroll to the expected position. You can
@@ -15353,7 +15464,7 @@ var EditorView = class _EditorView {
   for Tab and Shift-Tab, letting the browser's default
   focus-changing behavior go through instead. This is useful to
   prevent trapping keyboard users in your editor.
-  
+
   Without argument, this toggles the mode. With a boolean, it
   enables (true) or disables it (false). Given a number, it
   temporarily enables the mode until that number of milliseconds
@@ -15398,14 +15509,14 @@ var EditorView = class _EditorView {
   [`style-mod`](https://code.haverbeke.berlin/marijn/style-mod#documentation)
   style spec providing the styles for the theme. These will be
   prefixed with a generated class for the style.
-  
+
   Because the selectors will be prefixed with a scope class, rule
   that directly match the editor's [wrapper
   element](https://codemirror.net/6/docs/ref/#view.EditorView.dom)—to which the scope class will be
   added—need to be explicitly differentiated by adding an `&` to
   the selector for that element—for example
   `&.cm-focused`.
-  
+
   When `dark` is set to true, the theme will be marked as dark,
   which will cause the `&dark` rules from [base
   themes](https://codemirror.net/6/docs/ref/#view.EditorView^baseTheme) to be used (as opposed to
@@ -15567,6 +15678,9 @@ function getKeymap(state) {
     Keymaps.set(bindings, map = buildKeymap(bindings.reduce((a, b) => a.concat(b), [])));
   return map;
 }
+function runScopeHandlers(view, event, scope) {
+  return runHandlers(getKeymap(view.state), event, view, scope);
+}
 var storedPrefix = null;
 var PrefixTimeout = 4e3;
 function buildKeymap(bindings, platform = currentPlatform) {
@@ -15579,7 +15693,7 @@ function buildKeymap(bindings, platform = currentPlatform) {
     else if (current != is)
       throw new Error("Key binding " + name2 + " is used both as a regular binding and as a multi-stroke prefix");
   };
-  let add = (scope, key, command2, preventDefault, stopPropagation) => {
+  let add2 = (scope, key, command2, preventDefault, stopPropagation) => {
     var _a2, _b;
     let scopeObj = bound[scope] || (bound[scope] = /* @__PURE__ */ Object.create(null));
     let parts = key.split(/ (?!$)/).map((k) => normalizeKeyName(k, platform));
@@ -15629,9 +15743,9 @@ function buildKeymap(bindings, platform = currentPlatform) {
     if (!name2)
       continue;
     for (let scope of scopes) {
-      add(scope, name2, b.run, b.preventDefault, b.stopPropagation);
+      add2(scope, name2, b.run, b.preventDefault, b.stopPropagation);
       if (b.shift)
-        add(scope, "Shift-" + name2, b.shift, b.preventDefault, b.stopPropagation);
+        add2(scope, "Shift-" + name2, b.shift, b.preventDefault, b.stopPropagation);
     }
   }
   return bound;
@@ -15773,6 +15887,268 @@ var baseTheme = /* @__PURE__ */ EditorView.baseTheme({
     }
   }
 });
+var panelConfig = /* @__PURE__ */ Facet.define({
+  combine(configs) {
+    let topContainer, bottomContainer;
+    for (let c of configs) {
+      topContainer = topContainer || c.topContainer;
+      bottomContainer = bottomContainer || c.bottomContainer;
+    }
+    return { topContainer, bottomContainer };
+  }
+});
+function getPanel(view, panel) {
+  let plugin = view.plugin(panelPlugin);
+  let index = plugin ? plugin.specs.indexOf(panel) : -1;
+  return index > -1 ? plugin.panels[index] : null;
+}
+var panelPlugin = /* @__PURE__ */ ViewPlugin.fromClass(class {
+  constructor(view) {
+    this.input = view.state.facet(showPanel);
+    this.specs = this.input.filter((s) => s);
+    this.panels = this.specs.map((spec) => spec(view));
+    let conf = view.state.facet(panelConfig);
+    this.top = new PanelGroup(view, true, conf.topContainer);
+    this.bottom = new PanelGroup(view, false, conf.bottomContainer);
+    this.top.sync(this.panels.filter((p) => p.top));
+    this.bottom.sync(this.panels.filter((p) => !p.top));
+    for (let p of this.panels) {
+      p.dom.classList.add("cm-panel");
+      if (p.mount)
+        p.mount();
+    }
+  }
+  update(update) {
+    let conf = update.state.facet(panelConfig);
+    if (this.top.container != conf.topContainer) {
+      this.top.sync([]);
+      this.top = new PanelGroup(update.view, true, conf.topContainer);
+    }
+    if (this.bottom.container != conf.bottomContainer) {
+      this.bottom.sync([]);
+      this.bottom = new PanelGroup(update.view, false, conf.bottomContainer);
+    }
+    this.top.syncClasses();
+    this.bottom.syncClasses();
+    let input = update.state.facet(showPanel);
+    if (input != this.input) {
+      let specs = input.filter((x) => x);
+      let panels = [], top2 = [], bottom = [], mount = [];
+      for (let spec of specs) {
+        let known = this.specs.indexOf(spec), panel;
+        if (known < 0) {
+          panel = spec(update.view);
+          mount.push(panel);
+        } else {
+          panel = this.panels[known];
+          if (panel.update)
+            panel.update(update);
+        }
+        panels.push(panel);
+        (panel.top ? top2 : bottom).push(panel);
+      }
+      this.specs = specs;
+      this.panels = panels;
+      this.top.sync(top2);
+      this.bottom.sync(bottom);
+      for (let p of mount) {
+        p.dom.classList.add("cm-panel");
+        if (p.mount)
+          p.mount();
+      }
+    } else {
+      for (let p of this.panels)
+        if (p.update)
+          p.update(update);
+    }
+  }
+  destroy() {
+    this.top.sync([]);
+    this.bottom.sync([]);
+  }
+}, {
+  provide: (plugin) => EditorView.scrollMargins.of((view) => {
+    let value = view.plugin(plugin);
+    return value && { top: value.top.scrollMargin(), bottom: value.bottom.scrollMargin() };
+  })
+});
+var PanelGroup = class {
+  constructor(view, top2, container) {
+    this.view = view;
+    this.top = top2;
+    this.container = container;
+    this.dom = void 0;
+    this.classes = "";
+    this.panels = [];
+    this.syncClasses();
+  }
+  sync(panels) {
+    for (let p of this.panels)
+      if (p.destroy && panels.indexOf(p) < 0)
+        p.destroy();
+    this.panels = panels;
+    this.syncDOM();
+  }
+  syncDOM() {
+    if (this.panels.length == 0) {
+      if (this.dom) {
+        this.dom.remove();
+        this.dom = void 0;
+      }
+      return;
+    }
+    if (!this.dom) {
+      this.dom = document.createElement("div");
+      this.dom.className = this.top ? "cm-panels cm-panels-top" : "cm-panels cm-panels-bottom";
+      let parent = this.container || this.view.dom;
+      parent.insertBefore(this.dom, this.top ? parent.firstChild : null);
+    }
+    let curDOM = this.dom.firstChild;
+    for (let panel of this.panels) {
+      if (panel.dom.parentNode == this.dom) {
+        while (curDOM != panel.dom)
+          curDOM = rm(curDOM);
+        curDOM = curDOM.nextSibling;
+      } else {
+        this.dom.insertBefore(panel.dom, curDOM);
+      }
+    }
+    while (curDOM)
+      curDOM = rm(curDOM);
+  }
+  scrollMargin() {
+    return !this.dom || this.container ? 0 : Math.max(0, this.top ? this.dom.getBoundingClientRect().bottom - Math.max(0, this.view.scrollDOM.getBoundingClientRect().top) : Math.min(innerHeight, this.view.scrollDOM.getBoundingClientRect().bottom) - this.dom.getBoundingClientRect().top);
+  }
+  syncClasses() {
+    if (!this.container || this.classes == this.view.themeClasses)
+      return;
+    for (let cls of this.classes.split(" "))
+      if (cls)
+        this.container.classList.remove(cls);
+    for (let cls of (this.classes = this.view.themeClasses).split(" "))
+      if (cls)
+        this.container.classList.add(cls);
+  }
+};
+function rm(node) {
+  let next = node.nextSibling;
+  node.remove();
+  return next;
+}
+var showPanel = /* @__PURE__ */ Facet.define({
+  enables: panelPlugin
+});
+function showDialog(view, config) {
+  let resolve;
+  let promise = new Promise((r) => resolve = r);
+  let panelCtor = (view2) => createDialog(view2, config, resolve);
+  if (view.state.field(dialogField, false)) {
+    view.dispatch({ effects: openDialogEffect.of(panelCtor) });
+  } else {
+    view.dispatch({ effects: StateEffect.appendConfig.of(dialogField.init(() => [panelCtor])) });
+  }
+  let close = closeDialogEffect.of(panelCtor);
+  return { close, result: promise.then((form) => {
+    let queue = view.win.queueMicrotask || ((f) => view.win.setTimeout(f, 10));
+    queue(() => {
+      if (view.state.field(dialogField).indexOf(panelCtor) > -1)
+        view.dispatch({ effects: close });
+    });
+    return form;
+  }) };
+}
+function getDialog(view, className) {
+  let dialogs = view.state.field(dialogField, false) || [];
+  for (let open of dialogs) {
+    let panel = getPanel(view, open);
+    if (panel && panel.dom.classList.contains(className))
+      return panel;
+  }
+  return null;
+}
+var dialogField = /* @__PURE__ */ StateField.define({
+  create() {
+    return [];
+  },
+  update(dialogs, tr) {
+    for (let e of tr.effects) {
+      if (e.is(openDialogEffect))
+        dialogs = [e.value].concat(dialogs);
+      else if (e.is(closeDialogEffect))
+        dialogs = dialogs.filter((d) => d != e.value);
+    }
+    return dialogs;
+  },
+  provide: (f) => showPanel.computeN([f], (state) => state.field(f))
+});
+var openDialogEffect = /* @__PURE__ */ StateEffect.define();
+var closeDialogEffect = /* @__PURE__ */ StateEffect.define();
+function createDialog(view, config, result) {
+  let content2 = config.content ? config.content(view, () => done(null)) : null;
+  if (!content2) {
+    content2 = crelt("form");
+    if (config.input) {
+      let input = crelt("input", config.input);
+      if (/^(text|password|number|email|tel|url)$/.test(input.type))
+        input.classList.add("cm-textfield");
+      if (!input.name)
+        input.name = "input";
+      content2.appendChild(crelt("label", (config.label || "") + ": ", input));
+    } else {
+      content2.appendChild(document.createTextNode(config.label || ""));
+    }
+    content2.appendChild(document.createTextNode(" "));
+    content2.appendChild(crelt("button", { class: "cm-button", type: "submit" }, config.submitLabel || "OK"));
+  }
+  let forms = content2.nodeName == "FORM" ? [content2] : content2.querySelectorAll("form");
+  for (let i = 0; i < forms.length; i++) {
+    let form = forms[i];
+    form.addEventListener("keydown", (event) => {
+      if (event.keyCode == 27) {
+        event.preventDefault();
+        done(null);
+      } else if (event.keyCode == 13) {
+        event.preventDefault();
+        done(form);
+      }
+    });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      done(form);
+    });
+  }
+  let panel = crelt("div", content2, crelt("button", {
+    onclick: () => done(null),
+    "aria-label": view.state.phrase("close"),
+    class: "cm-dialog-close",
+    type: "button"
+  }, ["\xD7"]));
+  if (config.class)
+    panel.className = config.class;
+  panel.classList.add("cm-dialog");
+  function done(form) {
+    if (panel.contains(panel.ownerDocument.activeElement))
+      view.focus();
+    result(form);
+  }
+  return {
+    dom: panel,
+    top: config.top,
+    mount: () => {
+      if (config.focus) {
+        let focus;
+        if (typeof config.focus == "string")
+          focus = content2.querySelector(config.focus);
+        else
+          focus = content2.querySelector("input") || content2.querySelector("button");
+        if (focus && "select" in focus)
+          focus.select();
+        else if (focus && "focus" in focus)
+          focus.focus();
+      }
+    }
+  };
+}
 var GutterMarker = class extends RangeValue {
   /**
   @internal
@@ -16146,8 +16522,8 @@ var lineNumberConfig = /* @__PURE__ */ Facet.define({
       domEventHandlers(a, b) {
         let result = Object.assign({}, a);
         for (let event in b) {
-          let exists = result[event], add = b[event];
-          result[event] = exists ? (view, line, event2) => exists(view, line, event2) || add(view, line, event2) : add;
+          let exists = result[event], add2 = b[event];
+          result[event] = exists ? (view, line, event2) => exists(view, line, event2) || add2(view, line, event2) : add2;
         }
         return result;
       }
@@ -16404,11 +16780,11 @@ var NodeSet = class _NodeSet {
     for (let type of this.types) {
       let newProps = null;
       for (let source of props) {
-        let add = source(type);
-        if (add) {
+        let add2 = source(type);
+        if (add2) {
           if (!newProps)
             newProps = Object.assign({}, type.props);
-          let value = add[1], prop = add[0];
+          let value = add2[1], prop = add2[0];
           if (prop.combine && prop.id in newProps)
             value = prop.combine(newProps[prop.id], value);
           newProps[prop.id] = value;
@@ -16496,7 +16872,7 @@ var Tree = class _Tree {
   position. If 1, it'll move into nodes that start at the
   position. With 0, it'll only enter nodes that cover the position
   from both sides.
-  
+
   Note that this will not enter
   [overlays](#common.MountedTree.overlay), and you often want
   [`resolveInner`](#common.Tree.resolveInner) instead.
@@ -17840,7 +18216,7 @@ var Parser = class {
   Start a parse, returning a [partial parse](#common.PartialParse)
   object. [`fragments`](#common.TreeFragment) can be passed in to
   make the parse incremental.
-  
+
   By default, the entire input is parsed. You can pass `ranges`,
   which should be a sorted array of non-empty, non-overlapping
   ranges, to parse only those ranges. The tree returned in that
@@ -18303,7 +18679,7 @@ var Tag = class _Tag {
   same modifier to a twice tag will return the same value (`m1(t1)
   == m1(t1)`) and applying multiple modifiers will, regardless or
   order, produce the same tag (`m1(m2(t1)) == m2(m1(t1))`).
-  
+
   When multiple modifiers are applied to a given base tag, each
   smaller set of modifiers is registered as a parent, so that for
   example `m1(m2(m3(t1)))` is a subtype of `m1(m2(t1))`,
@@ -19318,7 +19694,7 @@ var ParseContext = class _ParseContext {
   asynchronously loading a nested parser. It'll skip its input and
   mark it as not-really-parsed, so that the next update will parse
   it again.
-  
+
   When `until` is given, a reparse will be scheduled when that
   promise resolves.
   */
@@ -19719,11 +20095,11 @@ function syntaxIndentation(cx, ast, pos) {
   let stack = ast.resolveStack(pos);
   let inner = ast.resolveInner(pos, -1).resolve(pos, 0).enterUnfinishedNodesBefore(pos);
   if (inner != stack.node) {
-    let add = [];
+    let add2 = [];
     for (let cur = inner; cur && !(cur.from < stack.node.from || cur.to > stack.node.to || cur.from == stack.node.from && cur.type == stack.node.type); cur = cur.parent)
-      add.push(cur);
-    for (let i = add.length - 1; i >= 0; i--)
-      stack = { node: add[i], next: stack };
+      add2.push(cur);
+    for (let i = add2.length - 1; i >= 0; i--)
+      stack = { node: add2[i], next: stack };
   }
   return indentFor(stack, cx, pos);
 }
@@ -19893,7 +20269,7 @@ var HighlightStyle = class _HighlightStyle {
   that rely on external styling), or a
   [`style-mod`](https://code.haverbeke.berlin/marijn/style-mod#documentation)-style
   set of CSS properties (which define the styling for those tags).
-  
+
   The CSS rules created for a highlighter will be emitted in the
   order of the spec's properties. That means that for elements that
   have multiple tags associated with them, styles defined further
@@ -20324,11 +20700,11 @@ function changeLineComment(option, state, ranges = state.selection.ranges) {
       if (line.from > prevLine && (from == to || to > line.from)) {
         prevLine = line.from;
         let indent = /^\s*/.exec(line.text)[0].length;
-        let empty = indent == line.length;
+        let empty2 = indent == line.length;
         let comment2 = line.text.slice(indent, indent + token.length) == token ? indent : -1;
         if (indent < line.text.length && indent < minIndent)
           minIndent = indent;
-        lines.push({ line, comment: comment2, token, indent, empty, single: false });
+        lines.push({ line, comment: comment2, token, indent, empty: empty2, single: false });
       }
       pos = line.to + 1;
     }
@@ -20342,8 +20718,8 @@ function changeLineComment(option, state, ranges = state.selection.ranges) {
   }
   if (option != 2 && lines.some((l) => l.comment < 0 && (!l.empty || l.single))) {
     let changes = [];
-    for (let { line, token, indent, empty, single } of lines)
-      if (single || !empty)
+    for (let { line, token, indent, empty: empty2, single } of lines)
+      if (single || !empty2)
         changes.push({ from: line.from + indent, insert: token + " " });
     let changeSet = state.changes(changes);
     return { changes: changeSet, selection: state.selection.map(changeSet, 1) };
@@ -21349,7 +21725,7 @@ var CompletionContext = class {
   Allows you to register abort handlers, which will be called when
   the query is
   [aborted](https://codemirror.net/6/docs/ref/#autocomplete.CompletionContext.aborted).
-  
+
   By default, running queries will not be aborted for regular
   typing or backspacing, on the assumption that they are likely to
   return a result with a
@@ -22160,7 +22536,7 @@ var DefaultBlockParsers = {
     let marks2 = [elt(Type.CodeMark, from, from + len)];
     if (infoFrom < infoTo)
       marks2.push(elt(Type.CodeInfo, cx.lineStart + infoFrom, cx.lineStart + infoTo));
-    for (let first = true, empty = true, hasLine = false; cx.nextLine() && line.depth >= cx.stack.length; first = false) {
+    for (let first = true, empty2 = true, hasLine = false; cx.nextLine() && line.depth >= cx.stack.length; first = false) {
       let i = line.pos;
       if (line.indent - line.baseIndent < 4)
         while (i < line.text.length && line.text.charCodeAt(i) == ch)
@@ -22168,7 +22544,7 @@ var DefaultBlockParsers = {
       if (i - line.pos >= len && line.skipSpace(i) == line.text.length) {
         for (let m of line.markers)
           marks2.push(m);
-        if (empty && hasLine)
+        if (empty2 && hasLine)
           addCodeText(marks2, cx.lineStart - 1, cx.lineStart);
         marks2.push(elt(Type.CodeMark, cx.lineStart + line.pos, cx.lineStart + i));
         cx.nextLine();
@@ -22177,14 +22553,14 @@ var DefaultBlockParsers = {
         hasLine = true;
         if (!first) {
           addCodeText(marks2, cx.lineStart - 1, cx.lineStart);
-          empty = false;
+          empty2 = false;
         }
         for (let m of line.markers)
           marks2.push(m);
         let textStart = cx.lineStart + line.basePos, textEnd = cx.lineStart + line.text.length;
         if (textStart < textEnd) {
           addCodeText(marks2, textStart, textEnd);
-          empty = false;
+          empty2 = false;
         }
       }
     }
@@ -22785,8 +23161,8 @@ var MarkdownParser = class _MarkdownParser extends Parser {
     if (nonEmpty(config.props))
       nodeSet = nodeSet.extend(...config.props);
     if (nonEmpty(config.remove)) {
-      for (let rm of config.remove) {
-        let block2 = this.blockNames.indexOf(rm), inline2 = this.inlineNames.indexOf(rm);
+      for (let rm2 of config.remove) {
+        let block2 = this.blockNames.indexOf(rm2), inline2 = this.inlineNames.indexOf(rm2);
         if (block2 > -1)
           blockParsers[block2] = leafBlockParsers[block2] = void 0;
         if (inline2 > -1)
@@ -24476,7 +24852,7 @@ var InputStream = class {
   Look at a code unit near the stream position. `.peek(0)` equals
   `.next`, `.peek(-1)` gives you the previous character, and so
   on.
-  
+
   Note that looking around during tokenizing creates dependencies
   on potentially far-away content, which may reduce the
   effectiveness incremental parsing—when looking forward—or even
@@ -27471,8 +27847,8 @@ var autoCloseTags = /* @__PURE__ */ EditorView.inputHandler.of((view, from, to, 
     else if (text2 == ">" && around.name == "JSXFragmentTag") {
       return { range, changes: { from: head, insert: `</>` } };
     } else if (text2 == "/" && around.name == "JSXStartCloseTag") {
-      let empty = around.parent, base3 = empty.parent;
-      if (base3 && empty.from == head - 2 && ((name2 = elementName(state.doc, base3.firstChild, head)) || ((_a2 = base3.firstChild) === null || _a2 === void 0 ? void 0 : _a2.name) == "JSXFragmentTag")) {
+      let empty2 = around.parent, base3 = empty2.parent;
+      if (base3 && empty2.from == head - 2 && ((name2 = elementName(state.doc, base3.firstChild, head)) || ((_a2 = base3.firstChild) === null || _a2 === void 0 ? void 0 : _a2.name) == "JSXFragmentTag")) {
         let insert2 = `${name2}>`;
         return { range: EditorSelection.cursor(head + insert2.length, -1), changes: { from: head, insert: insert2 } };
       }
@@ -28319,8 +28695,8 @@ var Context = class {
       return result + (trailing ? this.spaceAfter : "");
     }
   }
-  marker(doc2, add) {
-    let number2 = this.node.name == "OrderedList" ? String(+itemNumber(this.item, doc2)[2] + add) : "";
+  marker(doc2, add2) {
+    let number2 = this.node.name == "OrderedList" ? String(+itemNumber(this.item, doc2)[2] + add2) : "";
     return this.spaceBefore + number2 + this.type + this.spaceAfter;
   }
 };
@@ -28481,8 +28857,8 @@ function nonTightList(node, doc2) {
   if (!second)
     return false;
   let line1 = doc2.lineAt(first.to), line2 = doc2.lineAt(second.from);
-  let empty = /^[\s>]*$/.test(line1.text);
-  return line1.number + (empty ? 0 : 1) < line2.number;
+  let empty2 = /^[\s>]*$/.test(line1.text);
+  return line1.number + (empty2 ? 0 : 1) < line2.number;
 }
 function blankLine(context, state, line) {
   let insert2 = "";
@@ -28640,6 +29016,1013 @@ var pasteURLAsLink = /* @__PURE__ */ EditorView.domEventHandlers({
   }
 });
 
+// node_modules/@codemirror/search/dist/index.js
+var basicNormalize = typeof String.prototype.normalize == "function" ? (x) => x.normalize("NFKD") : (x) => x;
+var SearchCursor = class {
+  /**
+  Create a text cursor. The query is the search string, `from` to
+  `to` provides the region to search.
+
+  When `normalize` is given, it will be called, on both the query
+  string and the content it is matched against, before comparing.
+  You can, for example, create a case-insensitive search by
+  passing `s => s.toLowerCase()`.
+
+  Text is always normalized with
+  [`.normalize("NFKD")`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/normalize)
+  (when supported).
+  */
+  constructor(text2, query, from = 0, to = text2.length, normalize, test) {
+    this.test = test;
+    this.value = { from: 0, to: 0, precise: false };
+    this.done = false;
+    this.matches = [];
+    this.buffer = "";
+    this.bufferPos = 0;
+    this.iter = text2.iterRange(from, to);
+    this.bufferStart = from;
+    this.normalize = normalize ? (x) => normalize(basicNormalize(x)) : basicNormalize;
+    this.query = this.normalize(query);
+  }
+  peek() {
+    if (this.bufferPos == this.buffer.length) {
+      this.bufferStart += this.buffer.length;
+      this.iter.next();
+      if (this.iter.done)
+        return -1;
+      this.bufferPos = 0;
+      this.buffer = this.iter.value;
+    }
+    return codePointAt2(this.buffer, this.bufferPos);
+  }
+  /**
+  Look for the next match. Updates the iterator's
+  [`value`](https://codemirror.net/6/docs/ref/#search.SearchCursor.value) and
+  [`done`](https://codemirror.net/6/docs/ref/#search.SearchCursor.done) properties. Should be called
+  at least once before using the cursor.
+  */
+  next() {
+    while (this.matches.length)
+      this.matches.pop();
+    return this.nextOverlapping();
+  }
+  /**
+  The `next` method will ignore matches that partially overlap a
+  previous match. This method behaves like `next`, but includes
+  such matches.
+  */
+  nextOverlapping() {
+    for (; ; ) {
+      let next = this.peek();
+      if (next < 0) {
+        this.done = true;
+        return this;
+      }
+      let str = fromCodePoint(next), start = this.bufferStart + this.bufferPos;
+      this.bufferPos += codePointSize2(next);
+      let norm = this.normalize(str);
+      if (norm.length)
+        for (let i = 0, pos = start, posPrecise = true; ; i++) {
+          let code = norm.charCodeAt(i);
+          let match = this.match(code, pos, posPrecise, this.bufferPos + this.bufferStart, i == norm.length - 1);
+          if (match) {
+            this.value = match;
+            return this;
+          }
+          if (i == norm.length - 1)
+            break;
+          if (posPrecise && i < str.length && str.charCodeAt(i) == code)
+            pos++;
+          else
+            posPrecise = false;
+        }
+    }
+  }
+  match(code, pos, posPrecise, end, endPrecise) {
+    let match = null;
+    for (let i = 0; i < this.matches.length; ) {
+      let partial = this.matches[i], keep = false;
+      if (this.query.charCodeAt(partial.index) == code) {
+        if (partial.index == this.query.length - 1) {
+          match = { from: partial.from, to: end, precise: endPrecise && partial.precise };
+        } else {
+          partial.index++;
+          keep = true;
+        }
+      }
+      if (keep)
+        i++;
+      else
+        this.matches.splice(i, 1);
+    }
+    if (this.query.charCodeAt(0) == code) {
+      if (this.query.length == 1)
+        match = { from: pos, to: end, precise: posPrecise && endPrecise };
+      else
+        this.matches.push({ from: pos, index: 1, precise: posPrecise });
+    }
+    if (match && this.test && !this.test(match.from, match.to, this.buffer, this.bufferStart))
+      match = null;
+    return match;
+  }
+};
+if (typeof Symbol != "undefined")
+  SearchCursor.prototype[Symbol.iterator] = function() {
+    return this;
+  };
+var empty = { from: -1, to: -1, match: /* @__PURE__ */ /.*/.exec(""), precise: true };
+var baseFlags = "gm" + (/x/.unicode == null ? "" : "u");
+var RegExpCursor = class {
+  /**
+  Create a cursor that will search the given range in the given
+  document. `query` should be the raw pattern (as you'd pass it to
+  `new RegExp`).
+  */
+  constructor(text2, query, options2, from = 0, to = text2.length) {
+    this.text = text2;
+    this.to = to;
+    this.curLine = "";
+    this.done = false;
+    this.value = empty;
+    if (/\\[sWDnr]|\n|\r|\[\^/.test(query))
+      return new MultilineRegExpCursor(text2, query, options2, from, to);
+    this.re = new RegExp(query, baseFlags + ((options2 === null || options2 === void 0 ? void 0 : options2.ignoreCase) ? "i" : ""));
+    this.test = options2 === null || options2 === void 0 ? void 0 : options2.test;
+    this.iter = text2.iter();
+    let startLine = text2.lineAt(from);
+    this.curLineStart = startLine.from;
+    this.matchPos = toCharEnd(text2, from);
+    this.getLine(this.curLineStart);
+  }
+  getLine(skip) {
+    this.iter.next(skip);
+    if (this.iter.lineBreak) {
+      this.curLine = "";
+    } else {
+      this.curLine = this.iter.value;
+      if (this.curLineStart + this.curLine.length > this.to)
+        this.curLine = this.curLine.slice(0, this.to - this.curLineStart);
+      this.iter.next();
+    }
+  }
+  nextLine() {
+    this.curLineStart = this.curLineStart + this.curLine.length + 1;
+    if (this.curLineStart > this.to)
+      this.curLine = "";
+    else
+      this.getLine(0);
+  }
+  /**
+  Move to the next match, if there is one.
+  */
+  next() {
+    for (let off = this.matchPos - this.curLineStart; ; ) {
+      this.re.lastIndex = off;
+      let match = this.matchPos <= this.to && this.re.exec(this.curLine);
+      if (match) {
+        let from = this.curLineStart + match.index, to = from + match[0].length;
+        this.matchPos = toCharEnd(this.text, to + (from == to ? 1 : 0));
+        if (from == this.curLineStart + this.curLine.length)
+          this.nextLine();
+        if ((from < to || from > this.value.to) && (!this.test || this.test(from, to, match))) {
+          this.value = { from, to, precise: true, match };
+          return this;
+        }
+        off = this.matchPos - this.curLineStart;
+      } else if (this.curLineStart + this.curLine.length < this.to) {
+        this.nextLine();
+        off = 0;
+      } else {
+        this.done = true;
+        return this;
+      }
+    }
+  }
+};
+var flattened = /* @__PURE__ */ new WeakMap();
+var FlattenedDoc = class _FlattenedDoc {
+  constructor(from, text2) {
+    this.from = from;
+    this.text = text2;
+  }
+  get to() {
+    return this.from + this.text.length;
+  }
+  static get(doc2, from, to) {
+    let cached = flattened.get(doc2);
+    if (!cached || cached.from >= to || cached.to <= from) {
+      let flat = new _FlattenedDoc(from, doc2.sliceString(from, to));
+      flattened.set(doc2, flat);
+      return flat;
+    }
+    if (cached.from == from && cached.to == to)
+      return cached;
+    let { text: text2, from: cachedFrom } = cached;
+    if (cachedFrom > from) {
+      text2 = doc2.sliceString(from, cachedFrom) + text2;
+      cachedFrom = from;
+    }
+    if (cached.to < to)
+      text2 += doc2.sliceString(cached.to, to);
+    flattened.set(doc2, new _FlattenedDoc(cachedFrom, text2));
+    return new _FlattenedDoc(from, text2.slice(from - cachedFrom, to - cachedFrom));
+  }
+};
+var MultilineRegExpCursor = class {
+  constructor(text2, query, options2, from, to) {
+    this.text = text2;
+    this.to = to;
+    this.done = false;
+    this.value = empty;
+    this.matchPos = toCharEnd(text2, from);
+    this.re = new RegExp(query, baseFlags + ((options2 === null || options2 === void 0 ? void 0 : options2.ignoreCase) ? "i" : ""));
+    this.test = options2 === null || options2 === void 0 ? void 0 : options2.test;
+    this.flat = FlattenedDoc.get(text2, from, this.chunkEnd(
+      from + 5e3
+      /* Chunk.Base */
+    ));
+  }
+  chunkEnd(pos) {
+    return pos >= this.to ? this.to : this.text.lineAt(pos).to;
+  }
+  next() {
+    for (; ; ) {
+      let off = this.re.lastIndex = this.matchPos - this.flat.from;
+      let match = this.re.exec(this.flat.text);
+      if (match && !match[0] && match.index == off) {
+        this.re.lastIndex = off + 1;
+        match = this.re.exec(this.flat.text);
+      }
+      if (match) {
+        let from = this.flat.from + match.index, to = from + match[0].length;
+        if ((this.flat.to >= this.to || match.index + match[0].length <= this.flat.text.length - 10) && (!this.test || this.test(from, to, match))) {
+          this.value = { from, to, precise: true, match };
+          this.matchPos = toCharEnd(this.text, to + (from == to ? 1 : 0));
+          return this;
+        }
+      }
+      if (this.flat.to == this.to) {
+        this.done = true;
+        return this;
+      }
+      this.flat = FlattenedDoc.get(this.text, this.flat.from, this.chunkEnd(this.flat.from + this.flat.text.length * 2));
+    }
+  }
+};
+if (typeof Symbol != "undefined") {
+  RegExpCursor.prototype[Symbol.iterator] = MultilineRegExpCursor.prototype[Symbol.iterator] = function() {
+    return this;
+  };
+}
+function validRegExp(source) {
+  try {
+    new RegExp(source, baseFlags);
+    return true;
+  } catch (_a2) {
+    return false;
+  }
+}
+function toCharEnd(text2, pos) {
+  if (pos >= text2.length)
+    return pos;
+  let line = text2.lineAt(pos), next;
+  while (pos < line.to && (next = line.text.charCodeAt(pos - line.from)) >= 56320 && next < 57344)
+    pos++;
+  return pos;
+}
+var gotoLine = (view) => {
+  let open = getDialog(view, "cm-goto-line");
+  if (open) {
+    let field = open.dom.querySelector("input[type=text]");
+    if (field)
+      field.select();
+    return true;
+  }
+  let { state } = view;
+  let line = String(state.doc.lineAt(view.state.selection.main.head).number);
+  let { close, result } = showDialog(view, {
+    class: "cm-goto-line",
+    label: state.phrase("Go to line"),
+    input: { type: "text", name: "line", value: line },
+    focus: true,
+    submitLabel: state.phrase("go")
+  });
+  result.then((form) => {
+    let match = form && /^([+-])?(\d+)?(:\d+)?(%)?$/.exec(form.elements["line"].value);
+    if (!match) {
+      view.dispatch({ effects: close });
+      return;
+    }
+    let startLine = state.doc.lineAt(state.selection.main.head);
+    let [, sign, ln, cl, percent2] = match;
+    let col = cl ? +cl.slice(1) : 0;
+    let line2 = ln ? +ln : startLine.number;
+    if (ln && percent2) {
+      let pc = line2 / 100;
+      if (sign)
+        pc = pc * (sign == "-" ? -1 : 1) + startLine.number / state.doc.lines;
+      line2 = Math.round(state.doc.lines * pc);
+    } else if (ln && sign) {
+      line2 = line2 * (sign == "-" ? -1 : 1) + startLine.number;
+    }
+    let docLine = state.doc.line(Math.max(1, Math.min(state.doc.lines, line2)));
+    let selection2 = EditorSelection.cursor(docLine.from + Math.max(0, Math.min(col, docLine.length)));
+    view.dispatch({
+      effects: [close, EditorView.scrollIntoView(selection2.from, { y: "center" })],
+      selection: selection2
+    });
+  });
+  return true;
+};
+var selectWord = ({ state, dispatch }) => {
+  let { selection: selection2 } = state;
+  let newSel = EditorSelection.create(selection2.ranges.map((range) => state.wordAt(range.head) || EditorSelection.cursor(range.head)), selection2.mainIndex);
+  if (newSel.eq(selection2))
+    return false;
+  dispatch(state.update({ selection: newSel }));
+  return true;
+};
+function findNextOccurrence(state, query) {
+  let { main, ranges } = state.selection;
+  let word = state.wordAt(main.head), fullWord = word && word.from == main.from && word.to == main.to;
+  for (let cycled = false, cursor2 = new SearchCursor(state.doc, query, ranges[ranges.length - 1].to); ; ) {
+    cursor2.next();
+    if (cursor2.done) {
+      if (cycled)
+        return null;
+      cursor2 = new SearchCursor(state.doc, query, 0, Math.max(0, ranges[ranges.length - 1].from - 1));
+      cycled = true;
+    } else {
+      if (cycled && ranges.some((r) => r.from == cursor2.value.from))
+        continue;
+      if (fullWord) {
+        let word2 = state.wordAt(cursor2.value.from);
+        if (!word2 || word2.from != cursor2.value.from || word2.to != cursor2.value.to)
+          continue;
+      }
+      return cursor2.value;
+    }
+  }
+}
+var selectNextOccurrence = ({ state, dispatch }) => {
+  let { ranges } = state.selection;
+  if (ranges.some((sel) => sel.from === sel.to))
+    return selectWord({ state, dispatch });
+  let searchedText = state.sliceDoc(ranges[0].from, ranges[0].to);
+  if (state.selection.ranges.some((r) => state.sliceDoc(r.from, r.to) != searchedText))
+    return false;
+  let range = findNextOccurrence(state, searchedText);
+  if (!range)
+    return false;
+  dispatch(state.update({
+    selection: state.selection.addRange(EditorSelection.range(range.from, range.to), false),
+    effects: EditorView.scrollIntoView(range.to)
+  }));
+  return true;
+};
+var searchConfigFacet = /* @__PURE__ */ Facet.define({
+  combine(configs) {
+    return combineConfig(configs, {
+      top: false,
+      caseSensitive: false,
+      literal: false,
+      regexp: false,
+      wholeWord: false,
+      createPanel: (view) => new SearchPanel(view),
+      scrollToMatch: (range) => EditorView.scrollIntoView(range)
+    });
+  }
+});
+function search(config) {
+  return config ? [searchConfigFacet.of(config), searchExtensions] : searchExtensions;
+}
+var SearchQuery = class {
+  /**
+  Create a query object.
+  */
+  constructor(config) {
+    this.search = config.search;
+    this.caseSensitive = !!config.caseSensitive;
+    this.literal = !!config.literal;
+    this.regexp = !!config.regexp;
+    this.replace = config.replace || "";
+    this.valid = !!this.search && (!this.regexp || validRegExp(this.search));
+    this.unquoted = this.unquote(this.search);
+    this.wholeWord = !!config.wholeWord;
+    this.test = config.test;
+  }
+  /**
+  @internal
+  */
+  unquote(text2) {
+    return this.literal ? text2 : text2.replace(/\\([nrt\\])/g, (_, ch) => ch == "n" ? "\n" : ch == "r" ? "\r" : ch == "t" ? "	" : "\\");
+  }
+  /**
+  Compare this query to another query.
+  */
+  eq(other) {
+    return this.search == other.search && this.replace == other.replace && this.caseSensitive == other.caseSensitive && this.regexp == other.regexp && this.wholeWord == other.wholeWord && this.test == other.test;
+  }
+  /**
+  @internal
+  */
+  create() {
+    return this.regexp ? new RegExpQuery(this) : new StringQuery(this);
+  }
+  /**
+  Get a search cursor for this query, searching through the given
+  range in the given state.
+  */
+  getCursor(state, from = 0, to) {
+    let st = state.doc ? state : EditorState.create({ doc: state });
+    if (to == null)
+      to = st.doc.length;
+    return this.regexp ? regexpCursor(this, st, from, to) : stringCursor(this, st, from, to);
+  }
+};
+var QueryType2 = class {
+  constructor(spec) {
+    this.spec = spec;
+  }
+};
+function wrapStringTest(test, state, inner) {
+  return (from, to, buffer, bufferPos) => {
+    if (inner && !inner(from, to, buffer, bufferPos))
+      return false;
+    let match = from >= bufferPos && to <= bufferPos + buffer.length ? buffer.slice(from - bufferPos, to - bufferPos) : state.doc.sliceString(from, to);
+    return test(match, state, from, to);
+  };
+}
+function stringCursor(spec, state, from, to) {
+  let test;
+  if (spec.wholeWord)
+    test = stringWordTest(state.doc, state.charCategorizer(state.selection.main.head));
+  if (spec.test)
+    test = wrapStringTest(spec.test, state, test);
+  return new SearchCursor(state.doc, spec.unquoted, from, to, spec.caseSensitive ? void 0 : (x) => x.toLowerCase(), test);
+}
+function stringWordTest(doc2, categorizer) {
+  return (from, to, buf, bufPos) => {
+    if (bufPos > from || bufPos + buf.length < to) {
+      bufPos = Math.max(0, from - 2);
+      buf = doc2.sliceString(bufPos, Math.min(doc2.length, to + 2));
+    }
+    return (categorizer(charBefore(buf, from - bufPos)) != CharCategory.Word || categorizer(charAfter(buf, from - bufPos)) != CharCategory.Word) && (categorizer(charAfter(buf, to - bufPos)) != CharCategory.Word || categorizer(charBefore(buf, to - bufPos)) != CharCategory.Word);
+  };
+}
+var StringQuery = class extends QueryType2 {
+  constructor(spec) {
+    super(spec);
+  }
+  nextMatch(state, curFrom, curTo) {
+    let cursor2 = stringCursor(this.spec, state, curTo, state.doc.length).nextOverlapping();
+    if (cursor2.done) {
+      let end = Math.min(state.doc.length, curFrom + this.spec.unquoted.length);
+      cursor2 = stringCursor(this.spec, state, 0, end).nextOverlapping();
+    }
+    return cursor2.done || cursor2.value.from == curFrom && cursor2.value.to == curTo ? null : cursor2.value;
+  }
+  // Searching in reverse is, rather than implementing an inverted search
+  // cursor, done by scanning chunk after chunk forward.
+  prevMatchInRange(state, from, to) {
+    for (let pos = to; ; ) {
+      let start = Math.max(from, pos - 1e4 - this.spec.unquoted.length);
+      let cursor2 = stringCursor(this.spec, state, start, pos), range = null;
+      while (!cursor2.nextOverlapping().done)
+        range = cursor2.value;
+      if (range)
+        return range;
+      if (start == from)
+        return null;
+      pos -= 1e4;
+    }
+  }
+  prevMatch(state, curFrom, curTo) {
+    let found = this.prevMatchInRange(state, 0, curFrom);
+    if (!found)
+      found = this.prevMatchInRange(state, Math.max(0, curTo - this.spec.unquoted.length), state.doc.length);
+    return found && (found.from != curFrom || found.to != curTo) ? found : null;
+  }
+  getReplacement(_result) {
+    return this.spec.unquote(this.spec.replace);
+  }
+  matchAll(state, limit) {
+    let cursor2 = stringCursor(this.spec, state, 0, state.doc.length), ranges = [];
+    while (!cursor2.next().done) {
+      if (ranges.length >= limit)
+        return null;
+      ranges.push(cursor2.value);
+    }
+    return ranges;
+  }
+  highlight(state, from, to, add2) {
+    let cursor2 = stringCursor(this.spec, state, Math.max(0, from - this.spec.unquoted.length), Math.min(to + this.spec.unquoted.length, state.doc.length));
+    while (!cursor2.next().done)
+      add2(cursor2.value.from, cursor2.value.to);
+  }
+};
+function wrapRegexpTest(test, state, inner) {
+  return (from, to, match) => {
+    return (!inner || inner(from, to, match)) && test(match[0], state, from, to);
+  };
+}
+function regexpCursor(spec, state, from, to) {
+  let test;
+  if (spec.wholeWord)
+    test = regexpWordTest(state.charCategorizer(state.selection.main.head));
+  if (spec.test)
+    test = wrapRegexpTest(spec.test, state, test);
+  return new RegExpCursor(state.doc, spec.search, { ignoreCase: !spec.caseSensitive, test }, from, to);
+}
+function charBefore(str, index) {
+  return str.slice(findClusterBreak2(str, index, false), index);
+}
+function charAfter(str, index) {
+  return str.slice(index, findClusterBreak2(str, index));
+}
+function regexpWordTest(categorizer) {
+  return (_from, _to, match) => !match[0].length || (categorizer(charBefore(match.input, match.index)) != CharCategory.Word || categorizer(charAfter(match.input, match.index)) != CharCategory.Word) && (categorizer(charAfter(match.input, match.index + match[0].length)) != CharCategory.Word || categorizer(charBefore(match.input, match.index + match[0].length)) != CharCategory.Word);
+}
+var RegExpQuery = class extends QueryType2 {
+  nextMatch(state, curFrom, curTo) {
+    let cursor2 = regexpCursor(this.spec, state, curTo, state.doc.length).next();
+    if (cursor2.done)
+      cursor2 = regexpCursor(this.spec, state, 0, curFrom).next();
+    return cursor2.done ? null : cursor2.value;
+  }
+  prevMatchInRange(state, from, to) {
+    for (let size = 1; ; size++) {
+      let start = Math.max(
+        from,
+        to - size * 1e4
+        /* FindPrev.ChunkSize */
+      );
+      let cursor2 = regexpCursor(this.spec, state, start, to), range = null;
+      while (!cursor2.next().done)
+        range = cursor2.value;
+      if (range && (start == from || range.from > start + 10))
+        return range;
+      if (start == from)
+        return null;
+    }
+  }
+  prevMatch(state, curFrom, curTo) {
+    return this.prevMatchInRange(state, 0, curFrom) || this.prevMatchInRange(state, curTo, state.doc.length);
+  }
+  getReplacement(result) {
+    return this.spec.unquote(this.spec.replace).replace(/\$([$&]|\d+)/g, (m, i) => {
+      if (i == "&")
+        return result.match[0];
+      if (i == "$")
+        return "$";
+      for (let l = i.length; l > 0; l--) {
+        let n = +i.slice(0, l);
+        if (n > 0 && n < result.match.length)
+          return result.match[n] + i.slice(l);
+      }
+      return m;
+    });
+  }
+  matchAll(state, limit) {
+    let cursor2 = regexpCursor(this.spec, state, 0, state.doc.length), ranges = [];
+    while (!cursor2.next().done) {
+      if (ranges.length >= limit)
+        return null;
+      ranges.push(cursor2.value);
+    }
+    return ranges;
+  }
+  highlight(state, from, to, add2) {
+    let cursor2 = regexpCursor(this.spec, state, Math.max(
+      0,
+      from - 250
+      /* RegExp.HighlightMargin */
+    ), Math.min(to + 250, state.doc.length));
+    while (!cursor2.next().done)
+      add2(cursor2.value.from, cursor2.value.to);
+  }
+};
+var setSearchQuery = /* @__PURE__ */ StateEffect.define();
+var togglePanel = /* @__PURE__ */ StateEffect.define();
+var searchState = /* @__PURE__ */ StateField.define({
+  create(state) {
+    return new SearchState(defaultQuery(state).create(), null);
+  },
+  update(value, tr) {
+    for (let effect of tr.effects) {
+      if (effect.is(setSearchQuery))
+        value = new SearchState(effect.value.create(), value.panel);
+      else if (effect.is(togglePanel))
+        value = new SearchState(value.query, effect.value ? createSearchPanel : null);
+    }
+    return value;
+  },
+  provide: (f) => showPanel.from(f, (val) => val.panel)
+});
+function getSearchQuery(state) {
+  let curState = state.field(searchState, false);
+  return curState ? curState.query.spec : defaultQuery(state);
+}
+var SearchState = class {
+  constructor(query, panel) {
+    this.query = query;
+    this.panel = panel;
+  }
+};
+var matchMark = /* @__PURE__ */ Decoration.mark({ class: "cm-searchMatch" });
+var selectedMatchMark = /* @__PURE__ */ Decoration.mark({ class: "cm-searchMatch cm-searchMatch-selected" });
+var searchHighlighter = /* @__PURE__ */ ViewPlugin.fromClass(class {
+  constructor(view) {
+    this.view = view;
+    this.decorations = this.highlight(view.state.field(searchState));
+  }
+  update(update) {
+    let state = update.state.field(searchState);
+    if (state != update.startState.field(searchState) || update.docChanged || update.selectionSet || update.viewportChanged)
+      this.decorations = this.highlight(state);
+  }
+  highlight({ query, panel }) {
+    if (!panel || !query.spec.valid)
+      return Decoration.none;
+    let { view } = this;
+    let builder = new RangeSetBuilder();
+    for (let i = 0, ranges = view.visibleRanges, l = ranges.length; i < l; i++) {
+      let { from, to } = ranges[i];
+      while (i < l - 1 && to > ranges[i + 1].from - 2 * 250)
+        to = ranges[++i].to;
+      query.highlight(view.state, from, to, (from2, to2) => {
+        let selected = view.state.selection.ranges.some((r) => r.from == from2 && r.to == to2);
+        builder.add(from2, to2, selected ? selectedMatchMark : matchMark);
+      });
+    }
+    return builder.finish();
+  }
+}, {
+  decorations: (v) => v.decorations
+});
+function searchCommand(f) {
+  return (view) => {
+    let state = view.state.field(searchState, false);
+    return state && state.query.spec.valid ? f(view, state) : openSearchPanel(view);
+  };
+}
+var findNext = /* @__PURE__ */ searchCommand((view, { query }) => {
+  let { to } = view.state.selection.main;
+  let next = query.nextMatch(view.state, to, to);
+  if (!next)
+    return false;
+  let selection2 = EditorSelection.single(next.from, next.to);
+  let config = view.state.facet(searchConfigFacet);
+  view.dispatch({
+    selection: selection2,
+    effects: [announceMatch(view, next), config.scrollToMatch(selection2.main, view)],
+    userEvent: "select.search"
+  });
+  selectSearchInput(view);
+  return true;
+});
+var findPrevious = /* @__PURE__ */ searchCommand((view, { query }) => {
+  let { state } = view, { from } = state.selection.main;
+  let prev = query.prevMatch(state, from, from);
+  if (!prev)
+    return false;
+  let selection2 = EditorSelection.single(prev.from, prev.to);
+  let config = view.state.facet(searchConfigFacet);
+  view.dispatch({
+    selection: selection2,
+    effects: [announceMatch(view, prev), config.scrollToMatch(selection2.main, view)],
+    userEvent: "select.search"
+  });
+  selectSearchInput(view);
+  return true;
+});
+var selectMatches = /* @__PURE__ */ searchCommand((view, { query }) => {
+  let ranges = query.matchAll(view.state, 1e3);
+  if (!ranges || !ranges.length)
+    return false;
+  view.dispatch({
+    selection: EditorSelection.create(ranges.map((r) => EditorSelection.range(r.from, r.to))),
+    userEvent: "select.search.matches"
+  });
+  return true;
+});
+var selectSelectionMatches = ({ state, dispatch }) => {
+  let sel = state.selection;
+  if (sel.ranges.length > 1 || sel.main.empty)
+    return false;
+  let { from, to } = sel.main;
+  let ranges = [], main = 0;
+  for (let cur = new SearchCursor(state.doc, state.sliceDoc(from, to)); !cur.next().done; ) {
+    if (ranges.length > 1e3)
+      return false;
+    if (cur.value.from == from)
+      main = ranges.length;
+    ranges.push(EditorSelection.range(cur.value.from, cur.value.to));
+  }
+  dispatch(state.update({
+    selection: EditorSelection.create(ranges, main),
+    userEvent: "select.search.matches"
+  }));
+  return true;
+};
+var replaceNext = /* @__PURE__ */ searchCommand((view, { query }) => {
+  let { state } = view, { from, to } = state.selection.main;
+  if (state.readOnly)
+    return false;
+  let match = query.nextMatch(state, from, from);
+  if (!match)
+    return false;
+  let next = match;
+  let changes = [], selection2, replacement;
+  let effects = [];
+  if (!next.precise) {
+    next = query.nextMatch(state, next.from, next.to);
+  } else if (next.from == from && next.to == to) {
+    replacement = state.toText(query.getReplacement(next));
+    changes.push({ from: next.from, to: next.to, insert: replacement });
+    next = query.nextMatch(state, next.from, next.to);
+    effects.push(EditorView.announce.of(state.phrase("replaced match on line $", state.doc.lineAt(from).number) + "."));
+  }
+  let changeSet = view.state.changes(changes);
+  if (next) {
+    selection2 = EditorSelection.single(next.from, next.to).map(changeSet);
+    effects.push(announceMatch(view, next));
+    effects.push(state.facet(searchConfigFacet).scrollToMatch(selection2.main, view));
+  }
+  view.dispatch({
+    changes: changeSet,
+    selection: selection2,
+    effects,
+    userEvent: "input.replace"
+  });
+  return true;
+});
+var replaceAll = /* @__PURE__ */ searchCommand((view, { query }) => {
+  if (view.state.readOnly)
+    return false;
+  let changes = [];
+  for (let match of query.matchAll(view.state, 1e9)) {
+    let { from, to, precise } = match;
+    if (precise)
+      changes.push({ from, to, insert: query.getReplacement(match) });
+  }
+  if (!changes.length)
+    return false;
+  let announceText = view.state.phrase("replaced $ matches", changes.length) + ".";
+  view.dispatch({
+    changes,
+    effects: EditorView.announce.of(announceText),
+    userEvent: "input.replace.all"
+  });
+  return true;
+});
+function createSearchPanel(view) {
+  return view.state.facet(searchConfigFacet).createPanel(view);
+}
+function defaultQuery(state, fallback) {
+  var _a2, _b, _c, _d, _e;
+  let sel = state.selection.main;
+  let selText = sel.empty || sel.to > sel.from + 100 ? "" : state.sliceDoc(sel.from, sel.to);
+  if (fallback && !selText)
+    return fallback;
+  let config = state.facet(searchConfigFacet);
+  return new SearchQuery({
+    search: ((_a2 = fallback === null || fallback === void 0 ? void 0 : fallback.literal) !== null && _a2 !== void 0 ? _a2 : config.literal) ? selText : selText.replace(/\n/g, "\\n"),
+    caseSensitive: (_b = fallback === null || fallback === void 0 ? void 0 : fallback.caseSensitive) !== null && _b !== void 0 ? _b : config.caseSensitive,
+    literal: (_c = fallback === null || fallback === void 0 ? void 0 : fallback.literal) !== null && _c !== void 0 ? _c : config.literal,
+    regexp: (_d = fallback === null || fallback === void 0 ? void 0 : fallback.regexp) !== null && _d !== void 0 ? _d : config.regexp,
+    wholeWord: (_e = fallback === null || fallback === void 0 ? void 0 : fallback.wholeWord) !== null && _e !== void 0 ? _e : config.wholeWord
+  });
+}
+function getSearchInput(view) {
+  let panel = getPanel(view, createSearchPanel);
+  return panel && panel.dom.querySelector("[main-field]");
+}
+function selectSearchInput(view) {
+  let input = getSearchInput(view);
+  if (input && input == view.root.activeElement)
+    input.select();
+}
+var openSearchPanel = (view) => {
+  let state = view.state.field(searchState, false);
+  if (state && state.panel) {
+    let searchInput = getSearchInput(view);
+    if (searchInput && searchInput != view.root.activeElement) {
+      let query = defaultQuery(view.state, state.query.spec);
+      if (query.valid)
+        view.dispatch({ effects: setSearchQuery.of(query) });
+      searchInput.focus();
+      searchInput.select();
+    }
+  } else {
+    view.dispatch({ effects: [
+      togglePanel.of(true),
+      state ? setSearchQuery.of(defaultQuery(view.state, state.query.spec)) : StateEffect.appendConfig.of(searchExtensions)
+    ] });
+  }
+  return true;
+};
+var closeSearchPanel = (view) => {
+  let state = view.state.field(searchState, false);
+  if (!state || !state.panel)
+    return false;
+  let panel = getPanel(view, createSearchPanel);
+  if (panel && panel.dom.contains(view.root.activeElement))
+    view.focus();
+  view.dispatch({ effects: togglePanel.of(false) });
+  return true;
+};
+var searchKeymap = [
+  { key: "Mod-f", run: openSearchPanel, scope: "editor search-panel" },
+  { key: "F3", run: findNext, shift: findPrevious, scope: "editor search-panel", preventDefault: true },
+  { key: "Mod-g", run: findNext, shift: findPrevious, scope: "editor search-panel", preventDefault: true },
+  { key: "Escape", run: closeSearchPanel, scope: "editor search-panel" },
+  { key: "Mod-Shift-l", run: selectSelectionMatches },
+  { key: "Mod-Alt-g", run: gotoLine },
+  { key: "Mod-d", run: selectNextOccurrence, preventDefault: true }
+];
+var SearchPanel = class {
+  constructor(view) {
+    this.view = view;
+    let query = this.query = view.state.field(searchState).query.spec;
+    this.commit = this.commit.bind(this);
+    this.searchField = crelt("input", {
+      value: query.search,
+      placeholder: phrase(view, "Find"),
+      "aria-label": phrase(view, "Find"),
+      class: "cm-textfield",
+      name: "search",
+      form: "",
+      "main-field": "true",
+      onchange: this.commit,
+      onkeyup: this.commit
+    });
+    this.replaceField = crelt("input", {
+      value: query.replace,
+      placeholder: phrase(view, "Replace"),
+      "aria-label": phrase(view, "Replace"),
+      class: "cm-textfield",
+      name: "replace",
+      form: "",
+      onchange: this.commit,
+      onkeyup: this.commit
+    });
+    this.caseField = crelt("input", {
+      type: "checkbox",
+      name: "case",
+      form: "",
+      checked: query.caseSensitive,
+      onchange: this.commit
+    });
+    this.reField = crelt("input", {
+      type: "checkbox",
+      name: "re",
+      form: "",
+      checked: query.regexp,
+      onchange: this.commit
+    });
+    this.wordField = crelt("input", {
+      type: "checkbox",
+      name: "word",
+      form: "",
+      checked: query.wholeWord,
+      onchange: this.commit
+    });
+    function button(name2, onclick, content2) {
+      return crelt("button", { class: "cm-button", name: name2, onclick, type: "button" }, content2);
+    }
+    this.dom = crelt("div", { onkeydown: (e) => this.keydown(e), class: "cm-search" }, [
+      this.searchField,
+      button("next", () => findNext(view), [phrase(view, "next")]),
+      button("prev", () => findPrevious(view), [phrase(view, "previous")]),
+      button("select", () => selectMatches(view), [phrase(view, "all")]),
+      crelt("label", null, [this.caseField, phrase(view, "match case")]),
+      crelt("label", null, [this.reField, phrase(view, "regexp")]),
+      crelt("label", null, [this.wordField, phrase(view, "by word")]),
+      ...view.state.readOnly ? [] : [
+        crelt("br"),
+        this.replaceField,
+        button("replace", () => replaceNext(view), [phrase(view, "replace")]),
+        button("replaceAll", () => replaceAll(view), [phrase(view, "replace all")])
+      ],
+      crelt("button", {
+        name: "close",
+        onclick: () => closeSearchPanel(view),
+        "aria-label": phrase(view, "close"),
+        type: "button"
+      }, ["\xD7"])
+    ]);
+  }
+  commit() {
+    let query = new SearchQuery({
+      search: this.searchField.value,
+      caseSensitive: this.caseField.checked,
+      regexp: this.reField.checked,
+      wholeWord: this.wordField.checked,
+      replace: this.replaceField.value
+    });
+    if (!query.eq(this.query)) {
+      this.query = query;
+      this.view.dispatch({ effects: setSearchQuery.of(query) });
+    }
+  }
+  keydown(e) {
+    if (runScopeHandlers(this.view, e, "search-panel")) {
+      e.preventDefault();
+    } else if (e.keyCode == 13 && e.target == this.searchField) {
+      e.preventDefault();
+      (e.shiftKey ? findPrevious : findNext)(this.view);
+    } else if (e.keyCode == 13 && e.target == this.replaceField) {
+      e.preventDefault();
+      replaceNext(this.view);
+    }
+  }
+  update(update) {
+    for (let tr of update.transactions)
+      for (let effect of tr.effects) {
+        if (effect.is(setSearchQuery) && !effect.value.eq(this.query))
+          this.setQuery(effect.value);
+      }
+  }
+  setQuery(query) {
+    this.query = query;
+    this.searchField.value = query.search;
+    this.replaceField.value = query.replace;
+    this.caseField.checked = query.caseSensitive;
+    this.reField.checked = query.regexp;
+    this.wordField.checked = query.wholeWord;
+  }
+  mount() {
+    this.searchField.select();
+  }
+  get pos() {
+    return 80;
+  }
+  get top() {
+    return this.view.state.facet(searchConfigFacet).top;
+  }
+};
+function phrase(view, phrase2) {
+  return view.state.phrase(phrase2);
+}
+var AnnounceMargin = 30;
+var Break = /[\s\.,:;?!]/;
+function announceMatch(view, { from, to }) {
+  let line = view.state.doc.lineAt(from), lineEnd2 = view.state.doc.lineAt(to).to;
+  let start = Math.max(line.from, from - AnnounceMargin), end = Math.min(lineEnd2, to + AnnounceMargin);
+  let text2 = view.state.sliceDoc(start, end);
+  if (start != line.from) {
+    for (let i = 0; i < AnnounceMargin; i++)
+      if (!Break.test(text2[i + 1]) && Break.test(text2[i])) {
+        text2 = text2.slice(i);
+        break;
+      }
+  }
+  if (end != lineEnd2) {
+    for (let i = text2.length - 1; i > text2.length - AnnounceMargin; i--)
+      if (!Break.test(text2[i - 1]) && Break.test(text2[i])) {
+        text2 = text2.slice(0, i);
+        break;
+      }
+  }
+  return EditorView.announce.of(`${view.state.phrase("current match")}. ${text2} ${view.state.phrase("on line")} ${line.number}.`);
+}
+var baseTheme3 = /* @__PURE__ */ EditorView.baseTheme({
+  ".cm-panel.cm-search": {
+    padding: "2px 6px 4px",
+    position: "relative",
+    "& [name=close]": {
+      position: "absolute",
+      top: "0",
+      right: "4px",
+      backgroundColor: "inherit",
+      border: "none",
+      font: "inherit",
+      padding: 0,
+      margin: 0
+    },
+    "& input, & button, & label": {
+      margin: ".2em .6em .2em 0"
+    },
+    "& input[type=checkbox]": {
+      marginRight: ".2em"
+    },
+    "& label": {
+      fontSize: "80%",
+      whiteSpace: "pre"
+    }
+  },
+  "&light .cm-searchMatch": { backgroundColor: "#ffff0054" },
+  "&dark .cm-searchMatch": { backgroundColor: "#00ffff8a" },
+  "&light .cm-searchMatch-selected": { backgroundColor: "#ff6a0054" },
+  "&dark .cm-searchMatch-selected": { backgroundColor: "#ff00ff8a" }
+});
+var searchExtensions = [
+  searchState,
+  /* @__PURE__ */ Prec.low(searchHighlighter),
+  baseTheme3
+];
+
 // node_modules/@codemirror/theme-one-dark/dist/index.js
 var chalky = "#e5c07b";
 var coral = "#e06c75";
@@ -28784,6 +30167,114 @@ var oneDarkHighlightStyle = /* @__PURE__ */ HighlightStyle.define([
 ]);
 var oneDark = [oneDarkTheme, /* @__PURE__ */ syntaxHighlighting(oneDarkHighlightStyle)];
 
+// renderer/search-panel.mjs
+function createSearchPanel2(view) {
+  const dom = document.createElement("div");
+  dom.className = "cm-search editor-search";
+  dom.setAttribute("role", "search");
+  dom.setAttribute("aria-label", "Find and replace in document");
+  const row = document.createElement("div");
+  row.className = "search-row";
+  const replacement = document.createElement("div");
+  replacement.className = "search-row search-replacement";
+  replacement.hidden = true;
+  const options2 = document.createElement("div");
+  options2.className = "search-options";
+  const button = (name2, text2, label, action) => {
+    const el = document.createElement("button");
+    el.type = "button";
+    el.name = name2;
+    el.textContent = text2;
+    el.title = label;
+    el.setAttribute("aria-label", label);
+    el.addEventListener("click", action);
+    return el;
+  };
+  const input = (name2, placeholder) => {
+    const el = document.createElement("input");
+    el.name = name2;
+    el.placeholder = placeholder;
+    el.setAttribute("aria-label", placeholder);
+    el.autocomplete = "off";
+    el.spellcheck = false;
+    el.addEventListener("input", commit);
+    return el;
+  };
+  const find2 = input("search", "Find in document");
+  find2.setAttribute("main-field", "true");
+  const replace2 = input("replace", "Replace with");
+  const toggle = button("toggleReplace", "\u203A", "Show replacement controls", () => {
+    replacement.hidden = !replacement.hidden;
+    toggle.textContent = replacement.hidden ? "\u203A" : "\u2304";
+    toggle.setAttribute("aria-expanded", String(!replacement.hidden));
+    toggle.title = replacement.hidden ? "Show replacement controls" : "Hide replacement controls";
+    toggle.setAttribute("aria-label", toggle.title);
+    if (!replacement.hidden) replace2.focus();
+    view.requestMeasure();
+  });
+  toggle.setAttribute("aria-expanded", "false");
+  const previous = button("prev", "\u2191", "Previous match (Shift+Enter)", () => findPrevious(view));
+  const next = button("next", "\u2193", "Next match (Enter)", () => findNext(view));
+  const close = button("close", "\xD7", "Close search (Escape)", () => closeSearchPanel(view));
+  const one = button("replace", "Replace", "Replace current match", () => replaceNext(view));
+  const all = button("replaceAll", "Replace all", "Replace all matches in this document", () => replaceAll(view));
+  const count2 = document.createElement("span");
+  count2.className = "search-count";
+  count2.setAttribute("role", "status");
+  const toggles = {};
+  for (const [name2, text2, label, property] of [
+    ["case", "Aa", "Match case", "caseSensitive"],
+    ["word", "ab", "Whole word", "wholeWord"],
+    ["re", ".*", "Regular expression", "regexp"]
+  ]) {
+    const el = button(name2, text2, label, () => {
+      el.setAttribute("aria-pressed", String(el.getAttribute("aria-pressed") !== "true"));
+      commit();
+    });
+    toggles[property] = el;
+    options2.append(el);
+  }
+  options2.append(count2);
+  row.append(toggle, find2, previous, next, close);
+  replacement.append(replace2, one, all);
+  dom.append(row, options2, replacement);
+  function commit() {
+    view.dispatch({ effects: setSearchQuery.of(new SearchQuery({
+      search: find2.value,
+      replace: replace2.value,
+      ...Object.fromEntries(Object.entries(toggles).map(([key, el]) => [key, el.getAttribute("aria-pressed") === "true"]))
+    })) });
+  }
+  function update() {
+    const query = getSearchQuery(view.state);
+    find2.value = query.search;
+    replace2.value = query.replace;
+    for (const [key, el] of Object.entries(toggles)) el.setAttribute("aria-pressed", String(query[key]));
+    let total = 0, current = 0;
+    if (query.valid) {
+      const cursor2 = query.getCursor(view.state);
+      for (let match = cursor2.next(); !match.done; match = cursor2.next()) {
+        total++;
+        if (match.value.from === view.state.selection.main.from && match.value.to === view.state.selection.main.to) current = total;
+        if (total > 1e4) break;
+      }
+    }
+    count2.textContent = !query.search ? "" : !query.valid ? "Invalid expression" : !total ? "No matches" : total > 1e4 ? "10,000+ matches" : current ? `${current} of ${total}` : `${total} match${total === 1 ? "" : "es"}`;
+    find2.setAttribute("aria-invalid", String(Boolean(query.search && !query.valid)));
+    for (const el of [previous, next, one, all]) el.disabled = !total;
+  }
+  dom.addEventListener("keydown", (event) => {
+    if (runScopeHandlers(view, event, "search-panel")) event.preventDefault();
+    else if (event.key === "Enter" && !event.isComposing && (event.target === find2 || event.target === replace2)) {
+      event.preventDefault();
+      if (event.target === find2) (event.shiftKey ? findPrevious : findNext)(view);
+      else if (event.target === replace2) replaceNext(view);
+    }
+  });
+  update();
+  return { dom, top: true, update, mount: () => find2.select() };
+}
+
 // renderer/editor-source.js
 var lightHighlighting = syntaxHighlighting(HighlightStyle.define([
   { tag: tags.heading, color: "#7c3aed", fontWeight: "700" },
@@ -28848,6 +30339,71 @@ var shortcodeTheme = EditorView.baseTheme({
   ".cm-hugo-shortcode": { color: "#c2410c", backgroundColor: "#fff7ed", borderRadius: "3px" },
   ".cm-editor.cm-dark .cm-hugo-shortcode": { color: "#fdba74", backgroundColor: "#431407" }
 });
+var searchTheme = EditorView.baseTheme({
+  ".cm-panel.cm-search": {
+    display: "flex",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: "6px",
+    padding: "8px 38px 8px 12px",
+    borderBottom: "1px solid var(--border)",
+    backgroundColor: "var(--preview-bg)",
+    color: "var(--text)",
+    fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+    fontSize: "12px"
+  },
+  ".cm-panel.cm-search br": { flexBasis: "100%", width: "100%", height: "0" },
+  ".cm-panel.cm-search .cm-textfield": {
+    flex: "1 1 150px",
+    minWidth: "110px",
+    height: "30px",
+    margin: "0",
+    padding: "5px 8px",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--control-radius)",
+    backgroundColor: "var(--app-bg)",
+    color: "var(--text)",
+    font: "inherit"
+  },
+  ".cm-panel.cm-search .cm-button": {
+    minHeight: "30px",
+    margin: "0",
+    padding: "5px 9px",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--control-radius)",
+    backgroundColor: "var(--control-bg)",
+    backgroundImage: "none",
+    color: "var(--text)",
+    font: "inherit",
+    cursor: "pointer"
+  },
+  ".cm-panel.cm-search .cm-button:hover": { backgroundColor: "var(--control-hover)" },
+  ".cm-panel.cm-search label": {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "3px",
+    margin: "0",
+    color: "var(--muted)",
+    fontSize: "11px"
+  },
+  ".cm-panel.cm-search label input": { margin: "0" },
+  ".cm-panel.cm-search [name=close]": {
+    top: "8px",
+    right: "10px",
+    width: "24px",
+    height: "24px",
+    minHeight: "24px",
+    borderRadius: "4px",
+    color: "var(--muted)",
+    cursor: "pointer"
+  },
+  ".cm-panel.cm-search [name=close]:hover": {
+    backgroundColor: "var(--control-hover)",
+    color: "var(--text)"
+  },
+  "&light .cm-searchMatch, &dark .cm-searchMatch": { backgroundColor: "color-mix(in srgb, var(--accent) 30%, transparent)" },
+  "&light .cm-searchMatch-selected, &dark .cm-searchMatch-selected": { backgroundColor: "color-mix(in srgb, #f79009 45%, transparent)" }
+});
 function createMarkdownEditor(parent, onChange) {
   const theme2 = new Compartment();
   const fontSize = new Compartment();
@@ -28861,7 +30417,9 @@ function createMarkdownEditor(parent, onChange) {
       markdown(),
       hugoShortcodeHighlighting,
       shortcodeTheme,
-      keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+      search({ top: true, createPanel: createSearchPanel2 }),
+      searchTheme,
+      keymap.of([...searchKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
         if (update.docChanged) onChange(update.state.doc.toString());
@@ -28889,6 +30447,9 @@ function createMarkdownEditor(parent, onChange) {
       const range = view.state.selection.main;
       return { from: range.from, to: range.to, text: view.state.sliceDoc(range.from, range.to) };
     },
+    openSearch: () => openSearchPanel(view),
+    findNext: () => findNext(view),
+    findPrevious: () => findPrevious(view),
     focus: () => view.focus(),
     setTheme(mode) {
       currentTheme = mode;
@@ -28918,7 +30479,7 @@ function createMarkdownEditor(parent, onChange) {
 }
 export {
   createMarkdownEditor,
-  marked,
+  renderMarkdownPreview,
   sanitizePreview
 };
 /*! Bundled license information:

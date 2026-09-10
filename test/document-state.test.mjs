@@ -74,3 +74,25 @@ test('saving an untitled draft migrates only that draft and recovery keeps remai
   assert.equal(documents.get('/saved.md').dirty, false);
   assert.deepEqual(recoverySnapshot(documents, 'draft:2').documents.map(d => d.key), ['draft:2']);
 });
+
+import { openDocumentState } from '../renderer/document-state.mjs';
+test('reopening preserves dirty content and records the explicitly requested project context', () => {
+  const documents = new Map();
+  const draft = openDocumentState(documents, '/a.md', { filePath: '/a.md', content: 'disk', projectPath: '/project' });
+  draft.content = 'unsaved';
+  draft.dirty = true;
+  assert.equal(openDocumentState(documents, '/a.md', { filePath: '/a.md', content: 'external' }), draft);
+  assert.equal(draft.content, 'unsaved');
+  assert.equal(draft.savedContent, 'disk');
+  assert.equal(draft.projectPath, null);
+  assert.equal(draft.dirty, true);
+});
+
+test('reopening clean documents refreshes their saved baseline and keeps other drafts', () => {
+  const documents = new Map();
+  const other = openDocumentState(documents, 'draft:other', { filePath: null, content: '' });
+  openDocumentState(documents, '/a.md', { filePath: '/a.md', content: 'old' });
+  const refreshed = openDocumentState(documents, '/a.md', { filePath: '/a.md', content: 'new', projectPath: '/project' });
+  assert.deepEqual(refreshed, { filePath: '/a.md', content: 'new', savedContent: 'new', dirty: false, projectPath: '/project' });
+  assert.equal(documents.get('draft:other'), other);
+});

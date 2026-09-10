@@ -1,3 +1,19 @@
+// Refresh clean buffers from disk, but keep unsaved content when reopening a file.
+export function openDocumentState(documents, key, { filePath, content, projectPath = null }) {
+  let document = documents.get(key);
+  if (!document) {
+    document = { savedContent: content, content, dirty: false, filePath, projectPath };
+    documents.set(key, document);
+  } else {
+    if (!document.dirty) {
+      document.savedContent = content;
+      document.content = content;
+    }
+    document.projectPath = projectPath;
+  }
+  return document;
+}
+
 export function dirtyDocumentsForClose(openDocuments, currentDocumentKey) {
   return Array.from(openDocuments.entries())
     .filter(([, document]) => document.dirty)

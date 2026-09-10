@@ -30,5 +30,8 @@ contextBridge.exposeInMainWorld('api', {
   onHugoPostDeleted: (callback) => ipcRenderer.on('hugo-post-deleted', (event, data) => callback(data)),
   onRequestSave: (callback) => ipcRenderer.on('request-save', () => callback(false)),
   onRequestSaveAs: (callback) => ipcRenderer.on('request-save-as', () => callback(true)),
+  onRequestFind: (callback) => ipcRenderer.on('request-find', () => callback()),
+  onRequestFindNext: (callback) => ipcRenderer.on('request-find-next', () => callback()),
+  onRequestFindPrevious: (callback) => ipcRenderer.on('request-find-previous', () => callback()),
   onRequestWindowClose: (callback) => ipcRenderer.on('request-window-close', () => callback())
 });

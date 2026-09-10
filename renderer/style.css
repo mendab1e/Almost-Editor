@@ -402,3 +402,37 @@ body.is-home #dirty-status { display: none; }
 #sync-scroll svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 #toolbar #sync-scroll[aria-pressed="true"] { color: var(--accent); background: var(--selected-bg); }
 #format-toolbar [data-format] > span { display: none; }
+
+/* Find and replace stays in distinct rows at every pane width. */
+#editor .editor-search.cm-panel {
+  display: grid; gap: 6px; padding: 10px 12px;
+  background: var(--preview-bg); color: var(--text);
+  font: 12px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+}
+#editor .editor-search .search-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+#editor .editor-search input {
+  flex: 1; min-width: 0; width: 0; height: 30px; margin: 0;
+  padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--app-bg); color: var(--text); font: inherit;
+}
+#editor .editor-search button {
+  flex: 0 0 auto; margin: 0; padding: 0 7px; min-height: 28px;
+  border: 1px solid transparent; border-radius: 5px;
+  background: transparent; color: var(--muted); font: inherit; cursor: pointer;
+}
+#editor .editor-search button:hover:not(:disabled) { background: var(--control-hover); color: var(--text); }
+#editor .editor-search button:disabled { opacity: .35; cursor: default; }
+#editor .editor-search button[aria-pressed=true] { background: var(--selected-bg); color: var(--accent); border-color: var(--accent); }
+#editor .editor-search .search-row > button { font-size: 18px; width: 26px; padding: 0; }
+#editor .editor-search [name=close] { position: static; height: 28px; }
+#editor .editor-search .search-options { display: flex; align-items: center; gap: 3px; padding-left: 30px; }
+#editor .editor-search .search-options button { font: 12px/1 Menlo, monospace; min-height: 24px; }
+#editor .editor-search [name=word] { text-decoration: underline; text-underline-offset: 3px; }
+#editor .editor-search .search-count { margin-left: auto; color: var(--muted); font-size: 11px; }
+#editor .editor-search .search-replacement { padding-left: 30px; }
+#editor .editor-search .search-replacement button { width: auto; font-size: 12px; padding: 0 8px; border-color: var(--border); color: var(--text); }
+#editor .editor-search input[aria-invalid=true] { border-color: #e06c75; }
+@container (max-width: 340px) {
+  #editor .editor-search .search-replacement { flex-wrap: wrap; }
+  #editor .editor-search .search-replacement input { flex-basis: 100%; }
+}

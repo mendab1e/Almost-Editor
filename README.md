@@ -40,6 +40,8 @@ The suite covers Hugo project discovery, generated post front matter, image-proc
 
 Run the Electron regression checks (requires ImageMagick) with `npm run build && node_modules/.bin/electron scripts/verify-electron.cjs`. They use temporary documents and isolated settings. Run `node_modules/.bin/electron scripts/verify-ui.cjs` for welcome, search, title-first creation, recent documents, keyboard resizing, and scroll-sync checks. Run `node_modules/.bin/electron scripts/verify-saving.cjs` for save-race, conflict, untitled-draft, recovery, and discard checks.
 
+Run `node_modules/.bin/electron scripts/verify-search.cjs` for focused editor find/replace checks. It exercises the application menu, match highlighting and navigation, replacement, dirty state, and panel dismissal against a temporary document.
+
 ## Package for macOS
 
 Run `npm run pack:mac` to create an unpacked Apple Silicon app in `dist/mac-arm64`. Run `npm run dist:mac` to create the compressed Apple Silicon DMG; after a successful build, it removes the unpacked staging app to avoid retaining a second copy in `dist`.
@@ -61,6 +63,8 @@ Saves use a temporary file in the same directory and then replace the original, 
 Unsaved drafts are also stored separately in `draft-recovery.json` in the app's user-data folder. Recovery snapshots are written roughly every 300 ms during editing and before saves. After an unexpected exit, the app restores these drafts automatically; use **File → Open Documents** to access them. Recovery does not write to your Markdown files. The latest keystrokes can be lost if a crash happens before the next snapshot finishes. Choosing **Don’t Save** when closing explicitly discards the recovery drafts; cancelling close retains them.
 
 Use the formatting toolbar above the editor for headings, bold, italic, strikethrough, inline and fenced code, block quotes, bulleted, numbered, and task lists, links, and horizontal rules. Bold, italic, and link insertion are also available with <kbd>Cmd/Ctrl+B</kbd>, <kbd>Cmd/Ctrl+I</kbd>, and <kbd>Cmd/Ctrl+K</kbd>.
+
+Use **Edit → Find → Find…** or <kbd>Cmd/Ctrl+F</kbd> to search the current document. The bar shows a match count and previous/next arrows; Enter and Shift+Enter also navigate matches. Toggle **Aa** for match case, **ab** for whole words, or **.*** for regular expressions. Expand the chevron beside the search field to reveal **Replace** and **Replace all** on a separate row. Escape closes the bar. On macOS, <kbd>Cmd+G</kbd> and <kbd>Cmd+Shift+G</kbd> move between matches; on Windows and Linux, use <kbd>F3</kbd> and <kbd>Shift+F3</kbd>.
 
 Use the **Draft** button at the start of the formatting toolbar to toggle the current post's `draft` front-matter value. The button stays highlighted while the post is a draft. The adjacent **Set featured image** button chooses from images already inserted in the current post and stays highlighted when `featured_image` is set. Almost Editor updates TOML or YAML front matter appropriately. If the post has no inserted images, the picker says so and leaves the action disabled.
 
@@ -148,6 +152,7 @@ The editor and preview keep their chosen width ratio when you resize the window 
 ## Features
 
 - Markdown syntax highlighting, Hugo shortcode highlighting, line numbers, and configurable editor text size (9–20px)
+- In-document search and replace with case-sensitive, whole-word, and regular-expression options
 - Markdown formatting toolbar with standard text, list, code, quote, rule, and link controls
 - Live Hugo-oriented Markdown preview with YAML and TOML front matter removed
 - Lightbox and Hugo `ref` shortcode preview support

@@ -131,7 +131,37 @@ function updateApplicationMenu(documents) {
         process.platform === 'darwin' ? { role: 'close' } : { role: 'quit' }
       ]
     },
-    { role: 'editMenu' },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        ...(process.platform === 'darwin' ? [{ role: 'pasteAndMatchStyle' }] : []),
+        { role: 'delete' },
+        { role: 'selectAll' },
+        { type: 'separator' },
+        {
+          label: 'Find',
+          submenu: [
+            { label: 'Find…', accelerator: 'CmdOrCtrl+F', click: () => mainWindow.webContents.send('request-find') },
+            {
+              label: 'Find Next',
+              accelerator: process.platform === 'darwin' ? 'Cmd+G' : 'F3',
+              click: () => mainWindow.webContents.send('request-find-next')
+            },
+            {
+              label: 'Find Previous',
+              accelerator: process.platform === 'darwin' ? 'Cmd+Shift+G' : 'Shift+F3',
+              click: () => mainWindow.webContents.send('request-find-previous')
+            }
+          ]
+        }
+      ]
+    },
     { role: 'windowMenu' }
   ]);
   Menu.setApplicationMenu(menu);
@@ -375,7 +405,7 @@ handle('open-external', async (event, url) => {
   } catch { return { ok: false }; }
 });
 
-handle('get-config', () => loadConfig());
+handle('get-config', () => ({ config: loadConfig(), defaults: DEFAULT_CONFIG }));
 
 handle('save-config', (event, cfg) => {
   if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return loadConfig();
