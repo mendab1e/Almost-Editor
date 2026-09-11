@@ -1,7 +1,7 @@
 {
   "name": "markdown-blog-editor",
   "productName": "Almost Editor",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "A simple macOS Markdown editor for blog posts with ImageMagick-powered image handling and tag insertion.",
   "main": "main.js",
   "scripts": {
