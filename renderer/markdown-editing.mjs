@@ -91,3 +91,11 @@ export function buildMarkdownLink(label, target) {
   if (!url) throw new Error('Enter a URL.');
   return `[${escapedLabel}](${url})`;
 }
+
+export function insertGallery(source, from, to) {
+  const opening = '{{< gallery >}}\n';
+  const edit = insertMarkdownBlock(source, from, to, content => `${opening}${content}\n{{< /gallery >}}`);
+  edit.selectionStart = edit.from + edit.insert.indexOf(opening) + opening.length;
+  edit.selectionEnd = edit.selectionStart + source.slice(edit.from, edit.to).length;
+  return edit;
+}

@@ -22,7 +22,7 @@ export function bindDialogs(entries, { document, fallbackFocus }) {
   document.addEventListener('click', event => {
     for (const { dialog } of entries) {
       if (dialog.classList.contains('hidden')) {
-        triggers.set(dialog, event.target.closest('button') || document.activeElement);
+        triggers.set(dialog, event.target.closest('button, a[href]') || document.activeElement);
       }
     }
   }, true);

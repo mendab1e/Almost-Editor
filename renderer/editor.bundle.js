@@ -3701,6 +3701,31 @@ function parseShortcodeAttributes(source) {
   }
   return attributes;
 }
+var galleryMarkdown = new Marked({ extensions: [{
+  name: "gallery",
+  level: "block",
+  start(source) {
+    return source.search(/^ *\{\{<\s*gallery\b/m);
+  },
+  tokenizer(source) {
+    const opening = source.match(/^ *\{\{<\s*gallery\b([^\n]*?)>\}\}[ \t]*(?:\r?\n|$)/i);
+    if (!opening) return;
+    const tags3 = /\{\{<\s*(\/?)gallery\b[^\n]*?>\}\}/gi;
+    tags3.lastIndex = opening[0].length;
+    let depth = 1;
+    let tag2;
+    while (tag2 = tags3.exec(source)) {
+      depth += tag2[1] ? -1 : 1;
+      if (depth === 0) return {
+        type: "gallery",
+        raw: source.slice(0, tags3.lastIndex),
+        inner: source.slice(opening[0].length, tag2.index),
+        title: parseShortcodeAttributes(opening[1]).title || "Photo gallery",
+        openingLines: opening[0].match(/\n/g)?.length || 0
+      };
+    }
+  }
+}] });
 function expandLightboxShortcodes(markdown2, firstSourceLine) {
   const replacements = [];
   const expanded = markdown2.replace(/\{\{<\s*lightbox\b([^\n]*?)>\}\}/gi, (shortcode, attributeText) => {
@@ -3714,7 +3739,7 @@ function expandLightboxShortcodes(markdown2, firstSourceLine) {
     replacements.push({ placeholder, figure });
     return placeholder;
   });
-  const tokens = marked.lexer(expanded, { breaks: false });
+  const tokens = galleryMarkdown.lexer(expanded, { ...galleryMarkdown.defaults, breaks: false });
   const anchoredTokens = [];
   let sourceLine = firstSourceLine;
   for (const token of tokens) {
@@ -3726,10 +3751,16 @@ function expandLightboxShortcodes(markdown2, firstSourceLine) {
         text: `<span class="preview-scroll-anchor" data-source-line="${sourceLine}"></span>`
       });
     }
-    anchoredTokens.push(token);
+    anchoredTokens.push(token.type === "gallery" ? {
+      type: "html",
+      raw: token.raw,
+      block: true,
+      text: `<figure class="lightbox-gallery" role="group" aria-label="${escapeHtml(token.title)}">${expandLightboxShortcodes(token.inner, sourceLine + token.openingLines)}</figure>`
+    } : token);
     sourceLine += token.raw?.match(/\n/g)?.length || 0;
   }
   let html4 = marked.parser(anchoredTokens, { breaks: false });
+  html4 = html4.replace(/<p>((?:@@EDITOR_LIGHTBOX_\d+@@\s*)+)<\/p>\n?/g, "$1");
   for (const { placeholder, figure } of replacements) {
     html4 = html4.replace(`<p>${placeholder}</p>
 `, figure);

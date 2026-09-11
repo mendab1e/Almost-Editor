@@ -5,6 +5,7 @@ import {
   buildMarkdownLink,
   formatMarkdownBlock,
   insertMarkdownBlock,
+  insertGallery,
   wrapMarkdownSelection
 } from './markdown-editing.mjs';
 import {
@@ -82,6 +83,12 @@ const resetImageShortcodeBtn = document.getElementById('reset-image-shortcode');
 const lightboxEl = document.getElementById('preview-lightbox');
 const lightboxImage = document.getElementById('lightbox-image');
 const closeLightboxBtn = document.getElementById('close-lightbox');
+const previousLightboxBtn = document.getElementById('previous-lightbox');
+const nextLightboxBtn = document.getElementById('next-lightbox');
+const lightboxStatus = document.getElementById('lightbox-status');
+let lightboxItems = [];
+let lightboxIndex = 0;
+let lightboxTrigger = null;
 
 let currentDocumentKey = `draft:${crypto.randomUUID()}`;
 let previewVisible = true;
@@ -516,15 +523,40 @@ preview.addEventListener('click', (event) => {
     return;
   }
   event.preventDefault();
-  const image = link.querySelector('img');
-  lightboxImage.src = link.href;
-  lightboxImage.alt = image ? image.alt : 'Image';
+  const group = link.closest('.lightbox-gallery');
+  lightboxItems = group ? [...group.querySelectorAll('a[data-editor-lightbox]')]
+    .filter(item => item.closest('.lightbox-gallery') === group) : [link];
+  lightboxTrigger = link;
+  previousLightboxBtn.hidden = nextLightboxBtn.hidden = lightboxItems.length < 2;
+  showLightboxImage(lightboxItems.indexOf(link));
   showDialog(lightboxEl, closeLightboxBtn);
+});
+
+function showLightboxImage(index) {
+  if (!lightboxItems.length) return;
+  lightboxIndex = (index + lightboxItems.length) % lightboxItems.length;
+  const link = lightboxItems[lightboxIndex];
+  lightboxImage.src = link.href;
+  lightboxImage.alt = link.querySelector('img')?.alt || 'Image';
+  lightboxStatus.textContent = lightboxItems.length > 1
+    ? `${lightboxIndex + 1} / ${lightboxItems.length} — ${lightboxImage.alt}` : lightboxImage.alt;
+}
+previousLightboxBtn.addEventListener('click', () => showLightboxImage(lightboxIndex - 1));
+nextLightboxBtn.addEventListener('click', () => showLightboxImage(lightboxIndex + 1));
+lightboxEl.addEventListener('keydown', event => {
+  if (lightboxItems.length > 1 && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+    event.preventDefault();
+    showLightboxImage(lightboxIndex + (event.key === 'ArrowLeft' ? -1 : 1));
+  }
 });
 
 function closeLightbox() {
   lightboxEl.classList.add('hidden');
   lightboxImage.removeAttribute('src');
+  lightboxItems = [];
+  lightboxStatus.textContent = '';
+  if (lightboxTrigger?.isConnected) lightboxTrigger.focus();
+  lightboxTrigger = null;
 }
 
 openProjectBtn.addEventListener('click', async () => {
@@ -690,7 +722,9 @@ function applyFormat(format) {
   }
 
   const selection = editor.getSelection();
-  if (format === 'codeblock') {
+  if (format === 'gallery') {
+    applyEditorEdit(insertGallery(editor.getValue(), selection.from, selection.to));
+  } else if (format === 'codeblock') {
     applyEditorEdit(insertMarkdownBlock(
       editor.getValue(),
       selection.from,

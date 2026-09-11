@@ -28,3 +28,41 @@ test('preview retains Hugo ref links and ordinary Markdown formatting', () => {
   assert.match(html, /href="hugo-ref:/);
   assert.match(html, /<strong>Bold<\/strong> and <code>code<\/code>/);
 });
+
+
+test('preview renders independent galleries and keeps following source anchors accurate', () => {
+  const html = renderMarkdownPreview(`+++
+title = "Post"
++++
+{{< gallery title="A &quot;trip&quot;" >}}
+{{< lightbox src="one.jpg" >}}
+{{< lightbox src="two.jpg" >}}
+{{< lightbox src="three.jpg" >}}
+{{< /gallery >}}
+
+Between
+
+{{< gallery >}}
+{{< lightbox src="four.jpg" >}}
+{{< lightbox src="five.jpg" >}}
+{{< /gallery >}}
+
+After
+
+{{< lightbox src="standalone.jpg" >}}`);
+  const groups = [...html.matchAll(/<figure class="lightbox-gallery"[^>]*>([\s\S]*?)<\/figure>(?=\s*<span class="preview-scroll-anchor")/g)];
+  assert.equal(groups.length, 2);
+  assert.equal((groups[0][1].match(/data-editor-lightbox/g) || []).length, 3);
+  assert.equal((groups[1][1].match(/data-editor-lightbox/g) || []).length, 2);
+  assert.match(html, /aria-label="A &quot;trip&quot;"/);
+  assert.match(html, /data-source-line="17"[^>]*><\/span><p>After/);
+  assert.doesNotMatch(html, /EDITOR_LIGHTBOX|<p>\s*<figure|\{\{&lt;/);
+});
+
+test('gallery wrappers in fenced code remain literal and incomplete wrappers remain editable', () => {
+  const code = renderMarkdownPreview('```markdown\n{{< gallery >}}\n{{< /gallery >}}\n```');
+  assert.doesNotMatch(code, /class="lightbox-gallery"/);
+  assert.match(code, /&lt; gallery/);
+  assert.doesNotMatch(renderMarkdownPreview('{{< gallery >}}\nUnfinished'), /class="lightbox-gallery"/);
+  assert.match(renderMarkdownPreview('{{< gallery >}}\n{{< /gallery >}}'), /class="lightbox-gallery"/);
+});

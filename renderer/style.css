@@ -362,13 +362,11 @@ body.is-home #toolbar-right { margin-left: auto; }
 #format-toolbar { flex: 0 0 44px; min-height: 44px; flex-wrap: nowrap; gap: 4px; padding: 6px 12px; }
 #format-toolbar button, #format-toolbar select { border-radius: var(--control-radius); min-width: 28px; }
 #format-toolbar select { width: 88px; }
-#format-toolbar #insert-image { display: inline-flex; align-items: center; gap: 6px; }
 #format-toolbar #more-format { margin-left: auto; letter-spacing: 1px; }
 @container (max-width: 330px) {
   #format-toolbar { padding-inline: 6px; gap: 2px; }
   #format-toolbar select { width: 64px; padding-inline: 2px; }
   #format-toolbar button { padding-inline: 4px; }
-  .image-button-label { display: none; }
 }
 .control-popover { position: fixed; inset: auto; margin: 0; width: 256px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--preview-bg); color: var(--text); box-shadow: 0 8px 28px #0003; max-height: calc(100vh - 80px); overflow: auto; font-size: 13px; }
 .control-popover h2 { margin: 4px 4px 12px; font-size: 13px; }
@@ -435,4 +433,26 @@ body.is-home #dirty-status { display: none; }
 @container (max-width: 340px) {
   #editor .editor-search .search-replacement { flex-wrap: wrap; }
   #editor .editor-search .search-replacement input { flex-basis: 100%; }
+}
+
+#preview .lightbox-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  gap: 12px;
+  margin: 1.5em 0;
+}
+#preview .lightbox-gallery > .preview-scroll-anchor { position: absolute; }
+#preview .lightbox-gallery .lightbox { margin: 0; min-width: 0; }
+#preview .lightbox-gallery .lightbox img { width: 100%; aspect-ratio: 1; object-fit: cover; }
+#preview .lightbox-gallery figcaption { display: none; }
+#preview-lightbox { padding: 56px 52px 64px; }
+#previous-lightbox, #next-lightbox {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  border: 0; background: transparent; color: #fff; font-size: 42px; cursor: pointer;
+}
+#previous-lightbox { left: 10px; }
+#next-lightbox { right: 10px; }
+#lightbox-status {
+  position: absolute; bottom: 16px; left: 52px; right: 52px;
+  text-align: center; color: #fff; max-height: 3em; overflow: auto;
 }

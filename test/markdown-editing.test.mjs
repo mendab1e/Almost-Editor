@@ -4,6 +4,7 @@ import {
   buildMarkdownLink,
   formatMarkdownBlock,
   insertMarkdownBlock,
+  insertGallery,
   wrapMarkdownSelection
 } from '../renderer/markdown-editing.mjs';
 
@@ -58,4 +59,15 @@ test('formats the first blank line without creating a reversed selection', () =>
   assert.equal(edit.from, 0);
   assert.equal(edit.to, 0);
   assert.equal(edit.insert, '# Text');
+});
+
+test('gallery insertion wraps selected photos and places an empty cursor inside the wrapper', () => {
+  const photo = '{{< lightbox src="one.jpg" >}}';
+  const wrapped = insertGallery(photo, 0, photo.length);
+  assert.equal(wrapped.insert, `{{< gallery >}}\n${photo}\n{{< /gallery >}}\n`);
+  assert.equal(wrapped.insert.slice(wrapped.selectionStart, wrapped.selectionEnd), photo);
+  const empty = insertGallery('BeforeAfter', 6, 6);
+  assert.equal(empty.insert, '\n\n{{< gallery >}}\n\n{{< /gallery >}}\n\n');
+  assert.equal(empty.selectionStart, empty.selectionEnd);
+  assert.equal(empty.selectionStart, 6 + '\n\n{{< gallery >}}\n'.length);
 });

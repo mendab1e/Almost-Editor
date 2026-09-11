@@ -74,7 +74,7 @@
           </select>
           <button type="button" data-format="bold" aria-label="Bold" title="Bold (⌘B)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h6a4 4 0 0 1 0 8H6z M6 12h7a4 4 0 0 1 0 8H6z"/></svg></button>
           <button type="button" data-format="italic" aria-label="Italic" title="Italic (⌘I)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4h10M4 20h10M15 4 9 20"/></svg></button>
-          <button id="insert-image" type="button" aria-label="Insert image" title="Insert image"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg><span class="image-button-label">Image</span></button>
+          <button id="insert-image" type="button" aria-label="Insert image" title="Insert image"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 4 4 4-6 5 7"/></svg></button>
           <button id="insert-link" type="button" aria-label="Insert link" title="Insert link (⌘K)">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.6 13.4a4 4 0 0 0 5.7 0l2.1-2.1a4 4 0 0 0-5.7-5.7l-1.2 1.2M13.4 10.6a4 4 0 0 0-5.7 0l-2.1 2.1a4 4 0 0 0 5.7 5.7l1.2-1.2"/></svg>
           </button>
@@ -87,7 +87,7 @@
       <div id="preview"></div>
     </div>
   </div>
-  <div id="format-popover" class="control-popover format-popover" popover aria-label="More formatting"><button type="button" data-format="strikethrough" aria-label="Strikethrough" title="Strikethrough"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 6c-2-3-10-3-10 2 0 2 3 3 5 4m5 3c1 6-9 7-11 2M3 12h18"/></svg><span>Strikethrough</span></button>
+  <div id="format-popover" class="control-popover format-popover" popover aria-label="More formatting"><button type="button" data-format="gallery" aria-label="Insert gallery" title="Insert gallery"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Gallery</span></button><button type="button" data-format="strikethrough" aria-label="Strikethrough" title="Strikethrough"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 6c-2-3-10-3-10 2 0 2 3 3 5 4m5 3c1 6-9 7-11 2M3 12h18"/></svg><span>Strikethrough</span></button>
     <button type="button" data-format="code" aria-label="Inline code" title="Inline code"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18"/></svg><span>Inline code</span></button>
     <button type="button" data-format="blockquote" aria-label="Block quote" title="Block quote"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h5v7H5zm9 0h5v7h-5zM10 13c0 4-2 5-5 5m14-5c0 4-2 5-5 5"/></svg><span>Block quote</span></button>
     <button type="button" data-format="unordered" aria-label="Bulleted list" title="Bulleted list"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h12M9 12h12M9 18h12M3 6h1M3 12h1M3 18h1"/></svg><span>Bulleted list</span></button>
@@ -99,7 +99,10 @@
   <span id="dirty-status" class="hidden" role="status" aria-label="Unsaved changes" title="Unsaved changes"><span aria-hidden="true">●</span></span>
   <div id="preview-lightbox" class="hidden" role="dialog" aria-modal="true" aria-label="Image preview">
     <button id="close-lightbox" type="button" aria-label="Close image preview">×</button>
+    <button id="previous-lightbox" type="button" aria-label="Previous photo" hidden>‹</button>
     <img id="lightbox-image" alt="">
+    <button id="next-lightbox" type="button" aria-label="Next photo" hidden>›</button>
+    <span id="lightbox-status" role="status" aria-live="polite"></span>
   </div>
   <div id="new-post-dialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="new-post-title">
     <form id="new-post-form" class="modal-card">

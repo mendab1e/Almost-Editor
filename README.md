@@ -92,6 +92,27 @@ tags = []
 +++
 ```
 
+## Photo galleries
+
+Use **Gallery** in the Markdown toolbar (under **More formatting** when space is
+limited) to wrap selected lightbox shortcodes in an independent gallery. With no
+selection it inserts an empty wrapper and places the cursor inside, ready for
+**Insert image** or image drops.
+
+```markdown
+{{< gallery title="Along the trail" >}}
+{{< lightbox src="images/one.jpg" thumb="images/one_thumb.jpg" alt="The trail" >}}
+{{< lightbox src="images/two.jpg" thumb="images/two_thumb.jpg" alt="The summit" >}}
+{{< /gallery >}}
+```
+
+Each wrapper displays a responsive grid of square thumbnails. Clicking one opens
+the full image; Previous/Next buttons and arrow keys cycle through that group
+only. Escape closes the viewer. Add another wrapper anywhere in the post for a
+separate gallery. The optional `title` labels the group for accessibility.
+Standalone lightboxes keep opening individually. Publishing requires the matching
+`gallery` shortcode and lightbox assets in your Hugo blog.
+
 ## Custom lightbox shortcode
 
 The preview recognizes this custom Hugo lightbox macro:
@@ -155,7 +176,7 @@ The editor and preview keep their chosen width ratio when you resize the window 
 - In-document search and replace with case-sensitive, whole-word, and regular-expression options
 - Markdown formatting toolbar with standard text, list, code, quote, rule, and link controls
 - Live Hugo-oriented Markdown preview with YAML and TOML front matter removed
-- Lightbox and Hugo `ref` shortcode preview support
+- Lightbox, gallery, and Hugo `ref` shortcode preview support
 - Resizable project sidebar, editor, and preview panes
 - Light and dark themes, plus a system-theme option
 - Persistent theme, text size, image settings, window size, last file directory, last Hugo project, and active post
@@ -165,4 +186,4 @@ The editor and preview keep their chosen width ratio when you resize the window 
 
 ## Notes
 
-The editor preview is a focused local preview rather than a full Hugo site build. Hugo templates, layouts, and arbitrary shortcodes outside the supported lightbox and `ref` forms are rendered by Hugo itself when you build your site.
+The editor preview is a focused local preview rather than a full Hugo site build. Hugo templates, layouts, and arbitrary shortcodes outside the supported lightbox, gallery, and `ref` forms are rendered by Hugo itself when you build your site.
