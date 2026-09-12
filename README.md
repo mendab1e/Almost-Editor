@@ -66,7 +66,7 @@ Use the formatting toolbar above the editor for headings, bold, italic, striketh
 
 Use **Edit → Find → Find…** or <kbd>Cmd/Ctrl+F</kbd> to search the current document. The bar shows a match count and previous/next arrows; Enter and Shift+Enter also navigate matches. Toggle **Aa** for match case, **ab** for whole words, or **.*** for regular expressions. Expand the chevron beside the search field to reveal **Replace** and **Replace all** on a separate row. Escape closes the bar. On macOS, <kbd>Cmd+G</kbd> and <kbd>Cmd+Shift+G</kbd> move between matches; on Windows and Linux, use <kbd>F3</kbd> and <kbd>Shift+F3</kbd>.
 
-Use the **Draft** button at the start of the formatting toolbar to toggle the current post's `draft` front-matter value. The button stays highlighted while the post is a draft. The adjacent **Set featured image** button chooses from images already inserted in the current post and stays highlighted when `featured_image` is set. Almost Editor updates TOML or YAML front matter appropriately. If the post has no inserted images, the picker says so and leaves the action disabled.
+Use the **Draft** button at the start of the formatting toolbar to toggle the current post's `draft` front-matter value. The button stays highlighted while the post is a draft. The adjacent **Set featured image** button chooses from images already inserted in the current post and stays highlighted when `featured_image` is set. The selected image keeps its post-bundle-relative path, such as `images/photo.jpg`; the Hugo layout is responsible for resolving that resource against the published post URL. Almost Editor updates TOML or YAML front matter appropriately. If the post has no inserted images, the picker says so and leaves the action disabled.
 
 To link text, select it and choose the link button. Enter a URL directly, or choose **Blog article** and select a page bundle from the current Hugo project. Article links are inserted with Hugo's `ref` convention, for example `[Film scanning]({{< ref "/posts/film_scanning" >}})`.
 
@@ -78,7 +78,7 @@ content/posts/<post-name>/
 └── index.md
 ```
 
-Right-click a post in the project sidebar and choose **Delete Post…** to remove its entire page-bundle directory. Almost Editor shows a confirmation window before permanently deleting the Markdown file, images, and any other files in that directory.
+Right-click a post in the project sidebar and choose **Open in File Manager** to open its page-bundle directory, or choose **Delete Post…** to remove that directory. Almost Editor shows a confirmation window before permanently deleting the Markdown file, images, and any other files in it.
 
 The generated `index.md` uses Hugo TOML front matter:
 

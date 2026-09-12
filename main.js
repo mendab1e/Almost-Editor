@@ -331,6 +331,18 @@ async function confirmAndDeleteHugoPost(projectPath, relativePath, hasUnsavedCha
   }
 }
 
+async function openHugoPostDirectory(projectPath, relativePath) {
+  try {
+    const postDirectory = validatedHugoPostDirectory(projectPath, relativePath);
+    const error = await shell.openPath(postDirectory);
+    if (error) throw new Error(error);
+  } catch (error) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      dialog.showErrorBox('Could not open post directory', error.message);
+    }
+  }
+}
+
 function restoreLastSession() {
   const { lastHugoProject, lastHugoPost } = loadConfig();
   try {
@@ -517,10 +529,17 @@ handle('show-hugo-post-context-menu', (event, payload) => {
   }
   try {
     validatedHugoPostDirectory(projectPath, relativePath);
-    const menu = Menu.buildFromTemplate([{
-      label: 'Delete Post…',
-      click: () => { void confirmAndDeleteHugoPost(projectPath, relativePath, hasUnsavedChanges); }
-    }]);
+    const menu = Menu.buildFromTemplate([
+      {
+        label: 'Open in File Manager',
+        click: () => { void openHugoPostDirectory(projectPath, relativePath); }
+      },
+      { type: 'separator' },
+      {
+        label: 'Delete Post…',
+        click: () => { void confirmAndDeleteHugoPost(projectPath, relativePath, hasUnsavedChanges); }
+      }
+    ]);
     menu.popup({ window: mainWindow });
     return { ok: true };
   } catch (error) {
